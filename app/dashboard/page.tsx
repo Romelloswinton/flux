@@ -2,19 +2,16 @@ import Link from 'next/link';
 import { Palette, Cpu, Award, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { DashboardHeader, Sidebar } from '@/components/navigation';
 
 export default function Dashboard() {
   return (
-    <div className="min-h-screen">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Header */}
-        <div className="mb-12">
-          <h1 className="text-4xl font-bold mb-2">Dashboard</h1>
-          <p className="text-text-secondary text-lg">
-            Welcome back! Choose a tool to start creating
-          </p>
-        </div>
-
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <div className="flex-1 overflow-auto">
+        <DashboardHeader />
+        <div className="p-8">
+      <div className="max-w-7xl mx-auto">
         {/* Quick Actions */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           <Link href="/dashboard/overlay-builder" className="group">
@@ -74,42 +71,7 @@ export default function Dashboard() {
             </Card>
           </Link>
         </div>
-
-        {/* AI Assistant Preview */}
-        <Card className="border-primary/50 bg-gradient-to-br from-primary/5 to-transparent">
-          <CardHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  <CardTitle>AI Assistant</CardTitle>
-                  <span className="text-xs bg-primary text-white px-2 py-1 rounded-full">PRO</span>
-                </div>
-                <CardDescription>
-                  Get AI-powered design suggestions and auto-generate overlays
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-text-secondary mb-4">
-              Upgrade to Pro to unlock AI-powered customization tools
-            </p>
-            <Button>Upgrade to Pro</Button>
-          </CardContent>
-        </Card>
-
-        {/* Recent Projects */}
-        <div className="mt-12">
-          <h2 className="text-2xl font-bold mb-6">Recent Projects</h2>
-          <Card>
-            <CardContent className="py-12">
-              <div className="text-center text-text-secondary">
-                <p>No projects yet</p>
-                <p className="text-sm mt-2">Start creating to see your projects here</p>
-              </div>
-            </CardContent>
-          </Card>
+      </div>
         </div>
       </div>
     </div>

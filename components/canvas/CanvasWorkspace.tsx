@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Stage, Layer, Rect, Circle, Text as KonvaText } from 'react-konva';
+import { useState, useEffect, useRef } from 'react';
+import { Stage, Layer, Rect, Circle, Text as KonvaText, Transformer, Group, Line } from 'react-konva';
 import { Palette } from 'lucide-react';
 import { SelectionIndicator } from './SelectionIndicator';
 import type { Shape } from '@/lib/types/canvas';
 import type { Layer as LayerType, BlendMode } from '@/lib/types/layers';
+import type Konva from 'konva';
 
 // Map blend modes to Konva's globalCompositeOperation
 const getCompositeOperation = (blendMode: BlendMode): GlobalCompositeOperation => {
@@ -29,8 +30,12 @@ const getCompositeOperation = (blendMode: BlendMode): GlobalCompositeOperation =
 interface CanvasWorkspaceProps {
   shapes: Shape[];
   selectedId: string | null;
+  selectedLayerIds?: string[];
+  activeTool: string;
   onShapeSelect: (id: string | null) => void;
   onShapeDragEnd: (id: string, x: number, y: number) => void;
+  onShapeUpdate?: (id: string, updates: Partial<Shape>) => void;
+  onCanvasClick: (x: number, y: number) => void;
   zoom: number;
   layers: LayerType[];
 }
@@ -40,13 +45,28 @@ type SelectionMode = 'default' | 'drill-down' | 'isolated';
 export const CanvasWorkspace = ({
   shapes,
   selectedId,
+  selectedLayerIds = [],
+  activeTool,
   onShapeSelect,
   onShapeDragEnd,
+  onShapeUpdate,
+  onCanvasClick,
   zoom,
   layers,
 }: CanvasWorkspaceProps) => {
-  const canvasWidth = (1920 / 2) * (zoom / 100);
-  const canvasHeight = (1080 / 2) * (zoom / 100);
+  const [canvasWidth, setCanvasWidth] = useState(window.innerWidth);
+  const [canvasHeight, setCanvasHeight] = useState(window.innerHeight);
+
+  // Update canvas size on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setCanvasWidth(window.innerWidth);
+      setCanvasHeight(window.innerHeight);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Helper to find layer for a shape
   const findLayerById = (id: string): LayerType | null => {
@@ -63,10 +83,41 @@ export const CanvasWorkspace = ({
     return findInLayers(layers);
   };
 
+  // Helper to find mask shape for a layer
+  const findMaskForLayer = (layerId: string): Shape | null => {
+    const layer = findLayerById(layerId);
+    if (!layer || !layer.hasMask) return null;
+
+    // Find the layer that is masking this layer
+    const maskLayer = layers.find(l => l.isMask && l.maskTargetId === layerId);
+    if (!maskLayer) return null;
+
+    // Find the shape for the mask layer
+    return shapes.find(s => s.id === maskLayer.id) || null;
+  };
+
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('default');
   const [clickCount, setClickCount] = useState(0);
   const [lastClickTime, setLastClickTime] = useState(0);
   const [modifierKeyPressed, setModifierKeyPressed] = useState(false);
+
+  // Refs for transformer
+  const transformerRef = useRef<Konva.Transformer>(null);
+  const shapeRefs = useRef<{ [key: string]: Konva.Shape | Konva.Text }>({});
+
+  // Attach transformer to selected shape
+  useEffect(() => {
+    if (transformerRef.current && selectedId) {
+      const selectedNode = shapeRefs.current[selectedId];
+      if (selectedNode) {
+        transformerRef.current.nodes([selectedNode]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
+    } else if (transformerRef.current) {
+      transformerRef.current.nodes([]);
+      transformerRef.current.getLayer()?.batchDraw();
+    }
+  }, [selectedId]);
 
   // Track modifier keys (Ctrl/Cmd)
   useEffect(() => {
@@ -92,6 +143,39 @@ export const CanvasWorkspace = ({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
+
+  // Handle transform end (resize, rotate, etc.)
+  const handleTransformEnd = (id: string) => {
+    const node = shapeRefs.current[id];
+    if (node && onShapeUpdate) {
+      const scaleX = node.scaleX();
+      const scaleY = node.scaleY();
+
+      // Reset scale to 1 and apply to width/height instead
+      node.scaleX(1);
+      node.scaleY(1);
+
+      const shape = shapes.find(s => s.id === id);
+      if (shape) {
+        if (shape.type === 'rect' || shape.type === 'text') {
+          // Update shape dimensions
+          onShapeUpdate(id, {
+            x: node.x(),
+            y: node.y(),
+            width: Math.max(5, (shape.width || 0) * scaleX),
+            height: shape.type === 'rect' ? Math.max(5, (shape.height || 0) * scaleY) : shape.height,
+          });
+        } else if (shape.type === 'circle') {
+          // For circles, scale the radius
+          onShapeUpdate(id, {
+            x: node.x(),
+            y: node.y(),
+            radius: Math.max(5, (shape.radius || 0) * scaleX),
+          });
+        }
+      }
+    }
+  };
 
   // Handle click behavior (single vs double click)
   const handleShapeClick = (id: string) => {
@@ -121,7 +205,7 @@ export const CanvasWorkspace = ({
   };
 
   return (
-    <main className="flex-1 flex flex-col bg-background p-8">
+    <main className="w-screen h-screen flex flex-col bg-background overflow-hidden">
       {/* Selection Mode Indicator */}
       <div className="absolute top-24 left-8 z-30">
         <SelectionIndicator
@@ -136,11 +220,11 @@ export const CanvasWorkspace = ({
         />
       </div>
 
-      <div className="flex-1 flex items-center justify-center">
-        <div className="relative">
+      <div className="flex-1 flex items-center justify-center overflow-hidden">
+        <div className="relative w-full h-full">
         {/* Canvas Container */}
         <div
-          className="border-2 border-border-primary rounded-lg overflow-hidden bg-[#0e0e10] shadow-2xl relative"
+          className="bg-[#0e0e10] relative w-full h-full"
           style={{
             width: canvasWidth,
             height: canvasHeight,
@@ -154,17 +238,35 @@ export const CanvasWorkspace = ({
             onClick={(e) => {
               const clickedOnEmpty = e.target === e.target.getStage();
               if (clickedOnEmpty) {
-                onShapeSelect(null);
+                // If a creation tool is active, create shape at click position
+                if (activeTool !== 'select' && activeTool !== 'hand' && activeTool !== 'zoom') {
+                  const stage = e.target.getStage();
+                  if (stage) {
+                    const pointerPos = stage.getPointerPosition();
+                    if (pointerPos) {
+                      // Adjust for zoom
+                      const x = pointerPos.x / (zoom / 100);
+                      const y = pointerPos.y / (zoom / 100);
+                      onCanvasClick(x, y);
+                    }
+                  }
+                } else {
+                  // Otherwise just deselect
+                  onShapeSelect(null);
+                }
               }
             }}
           >
             <Layer>
               {shapes.map((shape) => {
                 const layer = findLayerById(shape.id);
-                const isSelected = shape.id === selectedId;
+                const isSelected = shape.id === selectedId || selectedLayerIds.includes(shape.id);
 
                 // Don't render if layer is hidden
                 if (layer && !layer.visible) return null;
+
+                // Skip rendering mask layers separately (they'll be used for clipping)
+                if (layer?.isMask) return null;
 
                 // Calculate opacity from layer
                 const opacity = layer ? layer.opacity / 100 : 1;
@@ -176,8 +278,16 @@ export const CanvasWorkspace = ({
                 const blendMode = layer?.blendMode || 'normal';
                 const compositeOperation = getCompositeOperation(blendMode);
 
+                // Check if this shape has a mask
+                const maskShape = layer?.hasMask ? findMaskForLayer(shape.id) : null;
+
                 const commonProps = {
                   key: shape.id,
+                  ref: (node: any) => {
+                    if (node) {
+                      shapeRefs.current[shape.id] = node;
+                    }
+                  },
                   x: layer?.x ?? shape.x,
                   y: layer?.y ?? shape.y,
                   draggable,
@@ -190,6 +300,7 @@ export const CanvasWorkspace = ({
                   onDragEnd: (e: any) => {
                     onShapeDragEnd(shape.id, e.target.x(), e.target.y());
                   },
+                  onTransformEnd: () => handleTransformEnd(shape.id),
                   // Visual feedback for locked layers
                   shadowEnabled: layer?.locked,
                   shadowColor: 'red',
@@ -197,18 +308,43 @@ export const CanvasWorkspace = ({
                   shadowOpacity: layer?.locked ? 0.3 : 0,
                 };
 
+                // Render the shape
+                let shapeElement;
                 if (shape.type === 'rect') {
-                  return (
+                  shapeElement = (
                     <Rect
                       {...commonProps}
                       width={shape.width}
                       height={shape.height}
                     />
                   );
+                } else if (shape.type === 'diamond') {
+                  // Diamond is a rotated square
+                  shapeElement = (
+                    <Rect
+                      {...commonProps}
+                      width={shape.width}
+                      height={shape.height}
+                      offsetX={shape.width ? shape.width / 2 : 0}
+                      offsetY={shape.height ? shape.height / 2 : 0}
+                      x={(layer?.x ?? shape.x) + (shape.width ? shape.width / 2 : 0)}
+                      y={(layer?.y ?? shape.y) + (shape.height ? shape.height / 2 : 0)}
+                      rotation={45}
+                    />
+                  );
+                } else if (shape.type === 'polygon') {
+                  // Polygon using points
+                  shapeElement = (
+                    <Line
+                      {...commonProps}
+                      points={shape.points || []}
+                      closed={true}
+                    />
+                  );
                 } else if (shape.type === 'circle') {
-                  return <Circle {...commonProps} radius={shape.radius} />;
+                  shapeElement = <Circle {...commonProps} radius={shape.radius} />;
                 } else if (shape.type === 'text') {
-                  return (
+                  shapeElement = (
                     <KonvaText
                       {...commonProps}
                       text={shape.text}
@@ -217,9 +353,53 @@ export const CanvasWorkspace = ({
                       width={shape.width}
                     />
                   );
+                } else {
+                  return null;
                 }
-                return null;
+
+                // If shape has a mask, wrap it in a Group with clipping
+                if (maskShape) {
+                  const maskLayer = findLayerById(maskShape.id);
+                  return (
+                    <Group
+                      key={`masked-${shape.id}`}
+                      clipFunc={(ctx) => {
+                        ctx.beginPath();
+                        const maskX = maskLayer?.x ?? maskShape.x;
+                        const maskY = maskLayer?.y ?? maskShape.y;
+
+                        if (maskShape.type === 'rect') {
+                          ctx.rect(maskX, maskY, maskShape.width || 0, maskShape.height || 0);
+                        } else if (maskShape.type === 'circle') {
+                          ctx.arc(
+                            maskX + (maskShape.radius || 0),
+                            maskY + (maskShape.radius || 0),
+                            maskShape.radius || 0,
+                            0,
+                            Math.PI * 2
+                          );
+                        }
+                        ctx.closePath();
+                      }}
+                    >
+                      {shapeElement}
+                    </Group>
+                  );
+                }
+
+                return shapeElement;
               })}
+              {/* Transformer for resize handles */}
+              <Transformer
+                ref={transformerRef}
+                boundBoxFunc={(oldBox, newBox) => {
+                  // Limit resize to minimum size
+                  if (newBox.width < 5 || newBox.height < 5) {
+                    return oldBox;
+                  }
+                  return newBox;
+                }}
+              />
             </Layer>
           </Stage>
 
@@ -238,7 +418,7 @@ export const CanvasWorkspace = ({
       </div>
 
       {/* Keyboard Shortcuts Help */}
-      <div className="mt-4 text-center">
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30">
         <div className="inline-flex items-center gap-4 px-4 py-2 bg-card border border-border-primary rounded-lg text-xs text-text-secondary">
           <div className="flex items-center gap-2">
             <kbd className="px-2 py-1 bg-card-hover rounded border border-border-primary font-mono">

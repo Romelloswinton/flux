@@ -41,6 +41,8 @@ export interface Layer {
   // Mask properties
   hasMask?: boolean;
   maskVisible?: boolean;
+  isMask?: boolean; // This layer is being used as a mask
+  maskTargetId?: string; // ID of the layer this mask is applied to
 
   // Adjustment layer properties
   adjustmentType?: AdjustmentType;

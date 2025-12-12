@@ -10,11 +10,12 @@ interface LeftPanelProps {
   // Layers
   layers: Layer[];
   selectedLayerId: string | null;
-  onLayerSelect: (id: string) => void;
-  onLayerAdd: (type: 'shape' | 'text' | 'group' | 'adjustment' | 'mask') => void;
+  selectedLayerIds?: string[];
+  onLayerSelect: (id: string, event?: React.MouseEvent) => void;
+  onLayerAdd: (type: 'shape' | 'text') => void;
   onLayerDelete: (id: string) => void;
-  onLayerDuplicate: (id: string) => void;
   onLayerUpdate: (id: string, updates: Partial<Layer>) => void;
+  onContextMenuAction?: (action: string, layerId: string) => void;
 
   // Assets
   assets: Asset[];
@@ -28,11 +29,12 @@ type TabType = 'layers' | 'assets';
 export const LeftPanel = ({
   layers,
   selectedLayerId,
+  selectedLayerIds = [],
   onLayerSelect,
   onLayerAdd,
   onLayerDelete,
-  onLayerDuplicate,
   onLayerUpdate,
+  onContextMenuAction,
   assets,
   assetCategories,
   onAssetSelect,
@@ -75,11 +77,12 @@ export const LeftPanel = ({
           <LayersPanel
             layers={layers}
             selectedLayerId={selectedLayerId}
+            selectedLayerIds={selectedLayerIds}
             onLayerSelect={onLayerSelect}
             onLayerAdd={onLayerAdd}
             onLayerDelete={onLayerDelete}
-            onLayerDuplicate={onLayerDuplicate}
             onLayerUpdate={onLayerUpdate}
+            onContextMenuAction={onContextMenuAction}
           />
         ) : (
           <AssetsPanel

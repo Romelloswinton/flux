@@ -1,4 +1,4 @@
-export type ShapeType = 'rect' | 'circle' | 'text';
+export type ShapeType = 'rect' | 'diamond' | 'polygon' | 'circle' | 'text';
 
 export interface Shape {
   id: string;
@@ -10,6 +10,7 @@ export interface Shape {
   height?: number;
   radius?: number;
   text?: string;
+  points?: number[]; // For polygon shapes
 
   // Layer metadata (applied from layer properties)
   _layerVisible?: boolean;
@@ -26,4 +27,4 @@ export interface Collaborator {
 }
 
 export type SaveStatus = 'saved' | 'saving' | 'unsaved';
-export type ToolType = 'select' | 'hand' | 'rect' | 'circle' | 'text' | 'pen' | 'image';
+export type ToolType = 'select' | 'hand' | 'rect' | 'diamond' | 'polygon' | 'circle' | 'text' | 'pen' | 'image';

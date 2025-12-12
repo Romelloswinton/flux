@@ -14,18 +14,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MathInput } from '@/components/canvas/MathInput';
-import { ExportModal } from '@/components/canvas/ExportModal';
 import type { ToolType, Shape } from '@/lib/types/canvas';
 import type { Layer, BlendMode } from '@/lib/types/layers';
-
-interface ExportOptions {
-  format: 'png' | 'jpg' | 'svg' | 'json';
-  quality: number;
-  scale: number;
-  transparent: boolean;
-  width?: number;
-  height?: number;
-}
 
 interface PropertiesPanelProps {
   activeTool: ToolType;
@@ -34,7 +24,7 @@ interface PropertiesPanelProps {
   onShapeUpdate: (id: string, updates: Partial<Shape>) => void;
   onLayerUpdate: (id: string, updates: Partial<Layer>) => void;
   onShapeDelete: (id: string) => void;
-  onExport: (format: string, options: ExportOptions) => void;
+  onExportClick: () => void;
 }
 
 type TabType = 'transform' | 'style' | 'component' | 'code' | 'settings';
@@ -46,10 +36,9 @@ export const PropertiesPanel = ({
   onShapeUpdate,
   onLayerUpdate,
   onShapeDelete,
-  onExport,
+  onExportClick,
 }: PropertiesPanelProps) => {
   const [activeTab, setActiveTab] = useState<TabType>('transform');
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   const tabs = [
     { id: 'transform' as TabType, label: 'Transform', icon: Move },
@@ -76,7 +65,7 @@ export const PropertiesPanel = ({
       {/* Export Button */}
       <div className="p-4 border-b border-border-primary">
         <Button
-          onClick={() => setIsExportModalOpen(true)}
+          onClick={onExportClick}
           className="w-full"
           size="default"
         >
@@ -441,13 +430,6 @@ export const PropertiesPanel = ({
           </>
         )}
       </div>
-
-      {/* Export Modal */}
-      <ExportModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        onExport={onExport}
-      />
     </aside>
   );
 };

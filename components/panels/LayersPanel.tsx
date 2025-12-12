@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Trash2, Copy, FolderPlus, Sliders, CircleDot, Info } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LayerItem } from './LayerItem';
 import { StackingContextInfo } from './StackingContextInfo';
@@ -10,21 +10,23 @@ import type { Layer, BlendMode } from '@/lib/types/layers';
 interface LayersPanelProps {
   layers: Layer[];
   selectedLayerId: string | null;
-  onLayerSelect: (id: string) => void;
-  onLayerAdd: (type: 'shape' | 'text' | 'group' | 'adjustment' | 'mask') => void;
+  selectedLayerIds?: string[];
+  onLayerSelect: (id: string, event?: React.MouseEvent) => void;
+  onLayerAdd: (type: 'shape' | 'text') => void;
   onLayerDelete: (id: string) => void;
-  onLayerDuplicate: (id: string) => void;
   onLayerUpdate: (id: string, updates: Partial<Layer>) => void;
+  onContextMenuAction?: (action: string, layerId: string) => void;
 }
 
 export const LayersPanel = ({
   layers,
   selectedLayerId,
+  selectedLayerIds = [],
   onLayerSelect,
   onLayerAdd,
   onLayerDelete,
-  onLayerDuplicate,
   onLayerUpdate,
+  onContextMenuAction,
 }: LayersPanelProps) => {
   const [expandedLayers, setExpandedLayers] = useState<Set<string>>(new Set());
 
@@ -91,15 +93,6 @@ export const LayersPanel = ({
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => selectedLayerId && onLayerDuplicate(selectedLayerId)}
-              disabled={!selectedLayerId}
-              title="Duplicate layer"
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
               onClick={() => selectedLayerId && onLayerDelete(selectedLayerId)}
               disabled={!selectedLayerId}
               title="Delete layer"
@@ -107,34 +100,6 @@ export const LayersPanel = ({
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
-        </div>
-
-        {/* Quick Add Buttons */}
-        <div className="grid grid-cols-3 gap-2">
-          <button
-            onClick={() => onLayerAdd('group')}
-            className="flex items-center justify-center gap-1.5 px-2 py-2 text-xs bg-card-hover hover:bg-border-primary rounded-lg transition-colors"
-            title="Add group"
-          >
-            <FolderPlus className="h-3.5 w-3.5" />
-            Group
-          </button>
-          <button
-            onClick={() => onLayerAdd('adjustment')}
-            className="flex items-center justify-center gap-1.5 px-2 py-2 text-xs bg-card-hover hover:bg-border-primary rounded-lg transition-colors"
-            title="Add adjustment layer"
-          >
-            <Sliders className="h-3.5 w-3.5" />
-            Adjust
-          </button>
-          <button
-            onClick={() => onLayerAdd('mask')}
-            className="flex items-center justify-center gap-1.5 px-2 py-2 text-xs bg-card-hover hover:bg-border-primary rounded-lg transition-colors"
-            title="Add layer mask"
-          >
-            <CircleDot className="h-3.5 w-3.5" />
-            Mask
-          </button>
         </div>
       </div>
 
@@ -152,12 +117,15 @@ export const LayersPanel = ({
               <LayerItem
                 key={layer.id}
                 layer={layer}
-                isSelected={selectedLayerId === layer.id}
+                isSelected={selectedLayerId === layer.id || selectedLayerIds.includes(layer.id)}
+                selectedLayerId={selectedLayerId}
+                selectedLayerIds={selectedLayerIds}
                 onSelect={onLayerSelect}
                 onToggleVisibility={handleToggleVisibility}
                 onToggleLock={handleToggleLock}
                 onToggleExpand={handleToggleExpand}
                 isExpanded={expandedLayers.has(layer.id)}
+                onContextMenuAction={onContextMenuAction}
               />
             ))}
           </div>
