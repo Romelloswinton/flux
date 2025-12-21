@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PREBUILT_WIDGETS, PREBUILT_OVERLAYS } from '@/lib/constants/widgets'
 import { useProjects, useCreateProject } from '@/lib/hooks/useProjects'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Search, Grid3x3, List, Plus, Eye, Sparkles, ArrowRight } from 'lucide-react'
@@ -17,6 +18,7 @@ import type { Asset } from '@/lib/types/layers'
 
 export default function WidgetsPage() {
   const router = useRouter()
+  const { user } = useAuth()
   const createProject = useCreateProject()
   const { data: projects } = useProjects()
 
@@ -40,11 +42,14 @@ export default function WidgetsPage() {
   })
 
   const handleUseWidget = async (widget: Asset) => {
+    if (!user) return
+
     try {
       console.log('Creating project with widget:', widget)
 
       // Create a new project with this widget
       const newProject = await createProject.mutateAsync({
+        owner_id: user.id,
         name: `${widget.name} Project`,
         description: widget.data?.description || null,
         canvas_width: 1920,
@@ -56,7 +61,7 @@ export default function WidgetsPage() {
         },
         category: widget.category,
         tags: widget.data?.tags || null,
-      })
+      } as any)
 
       console.log('Project created successfully:', newProject)
 

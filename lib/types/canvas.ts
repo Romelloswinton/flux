@@ -11,6 +11,8 @@ export interface Shape {
   radius?: number;
   text?: string;
   points?: number[]; // For polygon shapes
+  rotation?: number; // Rotation in degrees
+  fontSize?: number; // Font size for text shapes
 
   // Layer metadata (applied from layer properties)
   _layerVisible?: boolean;

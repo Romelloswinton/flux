@@ -1,12 +1,10 @@
 /**
  * Supabase Client Exports
  *
- * Import from here for cleaner code:
+ * Import directly from specific files:
  * import { createClient } from '@/lib/supabase/client'
  * import { createClient } from '@/lib/supabase/server'
  */
 
-export * from './client'
-export * from './server'
-export * from './middleware'
+// Re-export types only to avoid naming conflicts
 export type { Database } from './database.types'

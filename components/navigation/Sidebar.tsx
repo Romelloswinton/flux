@@ -19,8 +19,8 @@ const mainNavItems = [
     icon: FileText,
   },
   {
-    title: 'Templates',
-    href: '/dashboard/templates',
+    title: 'Store',
+    href: '/dashboard/store',
     icon: LayoutTemplate,
   },
   {

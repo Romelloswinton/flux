@@ -1,802 +1,332 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import dynamic from "next/dynamic"
-import { GlobalToolsBar } from "@/components/canvas/GlobalToolsBar"
-import { PropertiesPanel } from "@/components/canvas/PropertiesPanel"
-import { LeftPanel } from "@/components/panels/LeftPanel"
-import { ExportModal } from "@/components/canvas/ExportModal"
-import { PREBUILT_WIDGETS, PREBUILT_OVERLAYS } from "@/lib/constants/widgets"
-import type { ToolType, SaveStatus, Shape, ShapeType } from "@/lib/types/canvas"
-import type { Layer, Asset, AssetCategory } from "@/lib/types/layers"
+import dynamic from 'next/dynamic'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { ArrowLeft, Save, Loader2, Download, ChevronDown, Check } from 'lucide-react'
+import { useProject, useCreateProject, useUpdateProject } from '@/lib/hooks/useProjects'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { useEffect, useRef, useState, Suspense, useCallback } from 'react'
+import type { StoreType } from 'polotno/model/store'
 
-// Dynamically import CanvasWorkspace to prevent SSR and multiple Konva instances
-const CanvasWorkspace = dynamic(
-  () =>
-    import("@/components/canvas/CanvasWorkspace").then(
-      (mod) => mod.CanvasWorkspace
-    ),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex-1 flex items-center justify-center bg-background">
-        <div className="text-text-secondary text-sm">Loading canvas...</div>
-      </div>
-    ),
-  }
+const PolotnoEditor = dynamic(
+  () => import('@/components/scene-builder/PolotnoEditor').then((mod) => ({ default: mod.PolotnoEditor })),
+  { ssr: false, loading: () => <div className="w-full h-full flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div> }
 )
 
-export default function OverlayBuilder() {
-  // Canvas State
-  const [shapes, setShapes] = useState<Shape[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+function OverlayBuilderContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const projectId = searchParams.get('id')
 
-  // Layers State
-  const [layers, setLayers] = useState<Layer[]>([
-    {
-      id: "layer-1",
-      name: "Background",
-      type: "shape",
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: "normal",
-    },
-  ])
-  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(
-    "layer-1"
-  )
-  const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([])
-
-  // Assets State - Initialize with prebuilt overlays and widgets
-  const [assets, setAssets] = useState<Asset[]>([...PREBUILT_OVERLAYS, ...PREBUILT_WIDGETS])
-  const [assetCategories] = useState<AssetCategory[]>([
-    { id: "overlays", name: "Overlays" },
-    { id: "badges", name: "Badges" },
-    { id: "widgets", name: "Widgets" },
-    { id: "templates", name: "Templates" },
-  ])
-
-  // Tools State
-  const [activeTool, setActiveTool] = useState<ToolType>("select")
-
-  // Project State
-  const [projectName, setProjectName] = useState("Untitled Overlay")
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved")
-  const [zoom, setZoom] = useState(100)
-
-  // Collaboration State
-  const [isLocked, setIsLocked] = useState(false)
-  const collaborators = [
-    { id: 1, name: "You", avatar: "Y", color: "#9146ff" },
-    { id: 2, name: "Alex", avatar: "A", color: "#00f593" },
-    { id: 3, name: "Sam", avatar: "S", color: "#00c8ff" },
-  ]
-
-  // Auto-save timer ref
+  const storeRef = useRef<StoreType | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const lastSavedDataRef = useRef<string>('')
 
-  // Clipboard for copy/paste
-  const [clipboard, setClipboard] = useState<{ shape: Shape; layer: Layer } | null>(null)
+  const { user } = useAuth()
+  const { data: project, isLoading: isLoadingProject } = useProject(projectId || undefined)
+  const createProject = useCreateProject()
+  const updateProject = useUpdateProject()
 
-  // Export modal state
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
-
-  // Shape Management
-  const addShape = (type: ShapeType) => {
-    const shapeId = `${type}-${Date.now()}`
-    const newShape: Shape = {
-      id: shapeId,
-      type,
-      x: 100,
-      y: 100,
-      fill:
-        type === "rect" ? "#9146ff" :
-        type === "circle" ? "#00f593" :
-        type === "diamond" ? "#ff6b6b" :
-        type === "polygon" ? "#4ecdc4" :
-        "#ffffff",
-    }
-
-    if (type === "rect") {
-      newShape.width = 150
-      newShape.height = 100
-    } else if (type === "diamond") {
-      newShape.width = 100
-      newShape.height = 100
-    } else if (type === "polygon") {
-      // Pentagon shape - 5 points
-      newShape.width = 100
-      newShape.height = 100
-      newShape.points = [0, -50, 47.5, -15.5, 29.4, 40.5, -29.4, 40.5, -47.5, -15.5]
-    } else if (type === "circle") {
-      newShape.radius = 50
-    } else if (type === "text") {
-      newShape.text = "Your Text"
-      newShape.width = 200
-    }
-
-    // Create corresponding layer
-    const newLayer: Layer = {
-      id: shapeId,
-      name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${
-        shapes.length + 1
-      }`,
-      type: type === "text" ? "text" : "shape",
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: "normal",
-      x: 100,
-      y: 100,
-    }
-
-    setShapes([...shapes, newShape])
-    setLayers([...layers, newLayer])
-    setSelectedLayerId(shapeId)
-    setSelectedId(shapeId)
-    setSaveStatus("unsaved")
-    setActiveTool("select")
-  }
-
-  const handleToolChange = (tool: ToolType) => {
-    setActiveTool(tool)
-    // Don't auto-create shape anymore - let user click on canvas to place it
-  }
-
-  const handleCanvasClick = (x: number, y: number) => {
-    // Only create shape if a creation tool is active (not select)
-    if (activeTool === "rect" || activeTool === "diamond" || activeTool === "polygon" || activeTool === "circle" || activeTool === "text") {
-      const shapeId = `${activeTool}-${Date.now()}`
-      const newShape: Shape = {
-        id: shapeId,
-        type: activeTool as ShapeType,
-        x: x,
-        y: y,
-        fill:
-          activeTool === "rect" ? "#9146ff" :
-          activeTool === "circle" ? "#00f593" :
-          activeTool === "diamond" ? "#ff6b6b" :
-          activeTool === "polygon" ? "#4ecdc4" :
-          "#ffffff",
-      }
-
-      if (activeTool === "rect") {
-        newShape.width = 150
-        newShape.height = 100
-      } else if (activeTool === "diamond") {
-        newShape.width = 100
-        newShape.height = 100
-      } else if (activeTool === "polygon") {
-        // Pentagon shape - 5 points
-        newShape.width = 100
-        newShape.height = 100
-        newShape.points = [0, -50, 47.5, -15.5, 29.4, 40.5, -29.4, 40.5, -47.5, -15.5]
-      } else if (activeTool === "circle") {
-        newShape.radius = 50
-      } else if (activeTool === "text") {
-        newShape.text = "Your Text"
-        newShape.width = 200
-      }
-
-      // Create corresponding layer
-      const newLayer: Layer = {
-        id: shapeId,
-        name: `${activeTool.charAt(0).toUpperCase() + activeTool.slice(1)} ${
-          shapes.length + 1
-        }`,
-        type: activeTool === "text" ? "text" : "shape",
-        visible: true,
-        locked: false,
-        opacity: 100,
-        blendMode: "normal",
-        x: x,
-        y: y,
-      }
-
-      setShapes([...shapes, newShape])
-      setLayers([...layers, newLayer])
-      setSelectedLayerId(shapeId)
-      setSelectedId(shapeId)
-      setSaveStatus("unsaved")
-      setActiveTool("select") // Switch back to select tool after placing
-    }
-  }
-
-  const handleShapeDragEnd = (id: string, x: number, y: number) => {
-    // Update both shape and layer positions
-    setShapes(
-      shapes.map((shape) => (shape.id === id ? { ...shape, x, y } : shape))
-    )
-    setLayers(
-      layers.map((layer) => (layer.id === id ? { ...layer, x, y } : layer))
-    )
-    setSaveStatus("unsaved")
-  }
-
-  const handleShapeUpdate = (id: string, updates: Partial<Shape>) => {
-    setShapes(
-      shapes.map((shape) =>
-        shape.id === id ? { ...shape, ...updates } : shape
-      )
-    )
-    setSaveStatus("unsaved")
-  }
-
-  const handleShapeDelete = (id: string) => {
-    // Delete both shape and layer
-    setShapes(shapes.filter((shape) => shape.id !== id))
-    setLayers(layers.filter((layer) => layer.id !== id))
-    setSelectedId(null)
-    setSelectedLayerId(null)
-    setSaveStatus("unsaved")
-  }
-
-  // Project Management
-  const handleSave = () => {
-    setSaveStatus("saving")
-    setTimeout(() => {
-      setSaveStatus("saved")
-    }, 1000)
-  }
-
-  const handleExport = (format: string, options: any) => {
-    console.log("Exporting as:", format, "with options:", options)
-  }
-
-  // Layer Management
-  const handleLayerAdd = (
-    type: "shape" | "text" | "group" | "adjustment" | "mask"
-  ) => {
-    // For shape/text layers, create actual canvas shape
-    if (type === "shape" || type === "text") {
-      const shapeType: ShapeType = type === "text" ? "text" : "rect"
-      addShape(shapeType)
+  // Auto-save logic with debouncing
+  const performSave = useCallback(async (isManualSave = false) => {
+    if (!storeRef.current) {
+      console.error('No Polotno store instance')
       return
     }
 
-    // For special layer types (group, adjustment, mask)
-    const newLayer: Layer = {
-      id: `layer-${Date.now()}`,
-      name: `${type.charAt(0).toUpperCase() + type.slice(1)} Layer`,
-      type,
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: "normal",
-      hasMask: type === "mask",
-      children: type === "group" ? [] : undefined,
+    const snapshot = storeRef.current.toJSON()
+    const currentData = JSON.stringify(snapshot)
+
+    // Skip if data hasn't changed (unless manual save)
+    if (!isManualSave && currentData === lastSavedDataRef.current) {
+      return
     }
-    setLayers([...layers, newLayer])
-    setSelectedLayerId(newLayer.id)
-  }
 
-  const handleLayerDelete = (id: string) => {
-    // Delete both layer and corresponding shape
-    setLayers(layers.filter((l) => l.id !== id))
-    setShapes(shapes.filter((s) => s.id !== id))
-    if (selectedLayerId === id) {
-      setSelectedLayerId(null)
-      setSelectedId(null)
-    }
-  }
+    setIsSaving(true)
 
-  const handleLayerDuplicate = (id: string) => {
-    const layer = layers.find((l) => l.id === id)
-    if (layer) {
-      const duplicate: Layer = {
-        ...layer,
-        id: `layer-${Date.now()}`,
-        name: `${layer.name} Copy`,
-      }
-      setLayers([...layers, duplicate])
-    }
-  }
+    try {
+      if (projectId && project) {
+        await updateProject.mutateAsync({
+          id: projectId,
+          updates: {
+            project_data: snapshot as any,
+            updated_at: new Date().toISOString(),
+          },
+        })
+      } else {
+        if (!user) {
+          alert('You must be logged in to save projects')
+          return
+        }
 
-  const handleLayerUpdate = (id: string, updates: Partial<Layer>) => {
-    setLayers(layers.map((l) => (l.id === id ? { ...l, ...updates } : l)))
-  }
+        const newProject = await createProject.mutateAsync({
+          owner_id: user.id,
+          name: 'Untitled Overlay',
+          canvas_width: 1920,
+          canvas_height: 1080,
+          canvas_background_color: '#000000',
+          project_data: snapshot as any,
+        })
 
-  // Asset Management
-  const handleAssetSelect = (asset: Asset) => {
-    console.log("Selected asset:", asset)
-
-    // Load the widget template into the canvas
-    if (asset.data?.shapes && asset.data?.layers) {
-      // Add all shapes from the template
-      const newShapes = asset.data.shapes.map((shapeData: any) => ({
-        ...shapeData,
-        id: `${shapeData.id}-${Date.now()}`, // Ensure unique IDs
-      }))
-
-      // Add all layers from the template
-      const newLayers = asset.data.layers.map((layerData: any) => ({
-        ...layerData,
-        id: `${layerData.id}-${Date.now()}`, // Match the new shape IDs
-      }))
-
-      // Add to existing shapes and layers
-      setShapes([...shapes, ...newShapes])
-      setLayers([...layers, ...newLayers])
-
-      // Select the first shape from the template
-      if (newShapes.length > 0) {
-        setSelectedId(newShapes[0].id)
-        setSelectedLayerId(newLayers[0].id)
+        router.replace(`/dashboard/overlay-builder?id=${newProject.id}`)
       }
 
-      // Mark as unsaved
-      setSaveStatus("unsaved")
+      lastSavedDataRef.current = currentData
+      setHasUnsavedChanges(false)
+      setLastSaved(new Date())
+    } catch (error) {
+      console.error('Save failed:', error)
+      if (isManualSave) {
+        alert('Failed to save project.')
+      }
+    } finally {
+      setIsSaving(false)
     }
-  }
+  }, [projectId, project, user, updateProject, createProject, router])
 
-  const handleAssetCreate = () => {
-    console.log("Create new asset")
-    // TODO: Open asset creation modal
-  }
-
-  const handleLayerContextMenu = (action: string, layerId: string) => {
-    console.log("Context menu action:", action, "for layer:", layerId)
-
-    switch (action) {
-      case 'copy':
-        // Use existing copy logic
-        const shape = shapes.find(s => s.id === layerId)
-        const layer = layers.find(l => l.id === layerId)
-        if (shape && layer) {
-          setClipboard({ shape, layer })
-        }
-        break
-      case 'cut':
-        // Copy then delete
-        const cutShape = shapes.find(s => s.id === layerId)
-        const cutLayer = layers.find(l => l.id === layerId)
-        if (cutShape && cutLayer) {
-          setClipboard({ shape: cutShape, layer: cutLayer })
-          handleLayerDelete(layerId)
-        }
-        break
-      case 'duplicate':
-        handleLayerDuplicate(layerId)
-        break
-      case 'paste':
-        // Paste logic (will be implemented)
-        if (clipboard) {
-          const shapeId = `${clipboard.shape.type}-${Date.now()}`
-          const newShape: Shape = {
-            ...clipboard.shape,
-            id: shapeId,
-            x: clipboard.shape.x + 20,
-            y: clipboard.shape.y + 20,
-          }
-          const newLayer: Layer = {
-            ...clipboard.layer,
-            id: shapeId,
-            name: `${clipboard.layer.name} Copy`,
-            x: clipboard.layer.x ? clipboard.layer.x + 20 : undefined,
-            y: clipboard.layer.y ? clipboard.layer.y + 20 : undefined,
-          }
-          setShapes([...shapes, newShape])
-          setLayers([...layers, newLayer])
-          setSelectedLayerId(shapeId)
-          setSelectedId(shapeId)
-          setSaveStatus("unsaved")
-        }
-        break
-      case 'bring-to-front':
-        // Move layer to end of array (top)
-        const layerToFront = layers.find(l => l.id === layerId)
-        if (layerToFront) {
-          setLayers([...layers.filter(l => l.id !== layerId), layerToFront])
-          setSaveStatus("unsaved")
-        }
-        break
-      case 'send-to-back':
-        // Move layer to start of array (bottom)
-        const layerToBack = layers.find(l => l.id === layerId)
-        if (layerToBack) {
-          setLayers([layerToBack, ...layers.filter(l => l.id !== layerId)])
-          setSaveStatus("unsaved")
-        }
-        break
-      case 'use-as-mask':
-        // Find the current layer and the layer below it
-        const currentLayerIndex = layers.findIndex(l => l.id === layerId)
-        if (currentLayerIndex !== -1) {
-          // Get the layer below (previous in array)
-          const targetLayerIndex = currentLayerIndex - 1
-
-          if (targetLayerIndex >= 0) {
-            const targetLayer = layers[targetLayerIndex]
-
-            // Update layers: mark current as mask, target as having mask
-            const updatedLayers = layers.map((l, idx) => {
-              if (idx === currentLayerIndex) {
-                // Mark this layer as a mask
-                return {
-                  ...l,
-                  isMask: true,
-                  maskTargetId: targetLayer.id,
-                  visible: true // Keep mask visible for editing
-                }
-              } else if (idx === targetLayerIndex) {
-                // Mark target layer as having a mask
-                return { ...l, hasMask: true }
-              }
-              return l
-            })
-
-            setLayers(updatedLayers)
-            setSaveStatus("unsaved")
-            console.log(`Layer "${layers[currentLayerIndex].name}" is now masking "${targetLayer.name}"`)
-          } else {
-            console.log("No layer below to mask")
-          }
-        }
-        break
-      case 'group-selection':
-        // Group selected layers
-        if (selectedLayerIds.length > 1) {
-          // Create a new group layer
-          const groupId = `group-${Date.now()}`
-          const groupName = `Group ${layers.filter(l => l.type === 'group').length + 1}`
-
-          // Get the selected layers and their shapes
-          const layersToGroup = layers.filter(l => selectedLayerIds.includes(l.id))
-          const shapesToGroup = shapes.filter(s => selectedLayerIds.includes(s.id))
-
-          // Create the group layer with children
-          const groupLayer: Layer = {
-            id: groupId,
-            name: groupName,
-            type: 'group',
-            visible: true,
-            locked: false,
-            opacity: 100,
-            blendMode: 'normal',
-            children: layersToGroup,
-          }
-
-          // Remove grouped layers from top level and add the group
-          const remainingLayers = layers.filter(l => !selectedLayerIds.includes(l.id))
-          setLayers([...remainingLayers, groupLayer])
-
-          // Clear multi-selection and select the new group
-          setSelectedLayerIds([])
-          setSelectedLayerId(groupId)
-          setSaveStatus("unsaved")
-
-          console.log(`Created group "${groupName}" with ${layersToGroup.length} layers`)
-        } else if (selectedLayerIds.length === 1) {
-          console.log("Need at least 2 layers to create a group. Select multiple layers with Ctrl/Cmd+click.")
-        } else {
-          console.log("No layers selected for grouping")
-        }
-        break
-      case 'ungroup':
-        // Ungroup a group layer - move children back to top level
-        const groupLayer = layers.find(l => l.id === layerId)
-        if (groupLayer && groupLayer.type === 'group' && groupLayer.children) {
-          // Get all layers except the group
-          const otherLayers = layers.filter(l => l.id !== layerId)
-
-          // Add the group's children to the layers array
-          const updatedLayers = [...otherLayers, ...groupLayer.children]
-          setLayers(updatedLayers)
-
-          // Clear selection
-          setSelectedLayerId(null)
-          setSaveStatus("unsaved")
-
-          console.log(`Ungrouped "${groupLayer.name}" - moved ${groupLayer.children.length} layers to top level`)
-        } else {
-          console.log("Selected layer is not a group or has no children")
-        }
-        break
-      case 'unmask':
-        // Remove mask from a layer
-        const updatedLayers = layers.map(l => {
-          if (l.id === layerId) {
-            // If this layer has a mask, remove it
-            if (l.hasMask) {
-              const { hasMask, ...rest } = l;
-              return rest;
-            }
-            // If this layer IS a mask, remove the mask properties
-            if (l.isMask) {
-              const { isMask, maskTargetId, ...rest } = l;
-              return rest;
-            }
-          }
-          // Also check if this layer is being masked by the clicked layer
-          if (l.isMask && l.maskTargetId === layerId) {
-            const { isMask, maskTargetId, ...rest } = l;
-            return rest;
-          }
-          return l;
-        });
-        setLayers(updatedLayers);
-        setSaveStatus("unsaved");
-        console.log(`Removed mask from layer "${layers.find(l => l.id === layerId)?.name}"`);
-        break
-      default:
-        console.log("Action not implemented yet:", action)
-    }
-  }
-
-  const selectedShape = shapes.find((s) => s.id === selectedId) || null
-  const selectedLayer = layers.find((l) => l.id === selectedLayerId) || null
-
-  // Auto-populate canvas with a centered square on initial load
+  // Auto-save on store changes (debounced)
   useEffect(() => {
-    if (shapes.length === 0) {
-      const canvasWidth = window.innerWidth
-      const canvasHeight = window.innerHeight
-      const rectWidth = 150
-      const rectHeight = 100
+    if (!storeRef.current) return
 
-      const shapeId = `rect-${Date.now()}`
-      const newShape: Shape = {
-        id: shapeId,
-        type: "rect",
-        x: (canvasWidth / 2) - (rectWidth / 2), // Center X
-        y: (canvasHeight / 2) - (rectHeight / 2), // Center Y
-        fill: "#9146ff",
-        width: rectWidth,
-        height: rectHeight,
+    const handleChange = () => {
+      setHasUnsavedChanges(true)
+
+      // Clear existing timer
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
       }
 
-      const newLayer: Layer = {
-        id: shapeId,
-        name: "Rectangle 1",
-        type: "shape",
-        visible: true,
-        locked: false,
-        opacity: 100,
-        blendMode: "normal",
-        x: (canvasWidth / 2) - (rectWidth / 2),
-        y: (canvasHeight / 2) - (rectHeight / 2),
-      }
-
-      setShapes([newShape])
-      setLayers([...layers, newLayer])
-      setSelectedLayerId(shapeId)
-      setSelectedId(shapeId)
-      setSaveStatus("unsaved")
+      // Set new timer for auto-save (3 seconds)
+      autoSaveTimerRef.current = setTimeout(() => {
+        performSave(false)
+      }, 3000)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+    const unsubscribe = storeRef.current.on('change', handleChange)
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe()
+      }
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+    }
+  }, [storeRef.current, performSave])
+
+  const handleSave = async () => {
+    // Clear auto-save timer to prevent double-save
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+    }
+    await performSave(true)
+  }
+
+  const handleBack = () => {
+    if (hasUnsavedChanges) {
+      const confirmLeave = window.confirm('You have unsaved changes. Leave anyway?')
+      if (!confirmLeave) return
+    }
+    router.push('/dashboard/projects')
+  }
+
+  const handleExport = async (format: 'png' | 'svg' | 'pdf') => {
+    if (!storeRef.current) {
+      console.error('No Polotno store')
+      return
+    }
+
+    try {
+      let dataUrl = ''
+
+      if (format === 'png') {
+        dataUrl = await storeRef.current.toDataURL({ pixelRatio: 2 })
+      } else if (format === 'svg') {
+        const svgData = await storeRef.current.toSVG()
+        const blob = new Blob([svgData], { type: 'image/svg+xml' })
+        dataUrl = URL.createObjectURL(blob)
+      } else if (format === 'pdf') {
+        dataUrl = await storeRef.current.toPDF()
+      }
+
+      const link = document.createElement('a')
+      link.href = dataUrl
+      link.download = `${project?.name || 'overlay'}.${format}`
+      link.click()
+
+      if (format === 'svg') {
+        URL.revokeObjectURL(dataUrl)
+      }
+
+      setShowExportMenu(false)
+      console.log('Exported as', format)
+    } catch (error) {
+      console.error('Export failed:', error)
+      alert('Export failed')
+    }
+  }
+
+  const handleStoreReady = (store: StoreType) => {
+    storeRef.current = store
+    console.log('Store ready')
+
+    // Set initial last saved time for existing projects
+    if (project?.updated_at) {
+      setLastSaved(new Date(project.updated_at))
+    }
+  }
+
+  // Helper to format relative time
+  const getRelativeTime = (date: Date | null) => {
+    if (!date) return null
+
+    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000)
+
+    if (seconds < 10) return 'just now'
+    if (seconds < 60) return `${seconds} seconds ago`
+
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
+
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+
+    const days = Math.floor(hours / 24)
+    return `${days} day${days === 1 ? '' : 's'} ago`
+  }
+
+  // Update relative time display every 10 seconds
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick(t => t + 1)
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input field
-      const target = e.target as HTMLElement
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-        return
-      }
-
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
-      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey
-
-      // Copy: Cmd/Ctrl + C
-      if (cmdOrCtrl && e.key === 'c' && selectedId) {
+      // Ctrl+S or Cmd+S to save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
-        const shape = shapes.find(s => s.id === selectedId)
-        const layer = layers.find(l => l.id === selectedId)
-        if (shape && layer) {
-          setClipboard({ shape, layer })
-        }
-      }
-
-      // Paste: Cmd/Ctrl + V
-      if (cmdOrCtrl && e.key === 'v' && clipboard) {
-        e.preventDefault()
-        const shapeId = `${clipboard.shape.type}-${Date.now()}`
-        const newShape: Shape = {
-          ...clipboard.shape,
-          id: shapeId,
-          x: clipboard.shape.x + 20, // Offset to make it visible
-          y: clipboard.shape.y + 20,
-        }
-
-        const newLayer: Layer = {
-          ...clipboard.layer,
-          id: shapeId,
-          name: `${clipboard.layer.name} Copy`,
-          x: clipboard.layer.x ? clipboard.layer.x + 20 : undefined,
-          y: clipboard.layer.y ? clipboard.layer.y + 20 : undefined,
-        }
-
-        setShapes([...shapes, newShape])
-        setLayers([...layers, newLayer])
-        setSelectedLayerId(shapeId)
-        setSelectedId(shapeId)
-        setSaveStatus("unsaved")
-      }
-
-      // Duplicate: Cmd/Ctrl + D
-      if (cmdOrCtrl && e.key === 'd' && selectedId) {
-        e.preventDefault()
-        const shape = shapes.find(s => s.id === selectedId)
-        const layer = layers.find(l => l.id === selectedId)
-        if (shape && layer) {
-          const shapeId = `${shape.type}-${Date.now()}`
-          const newShape: Shape = {
-            ...shape,
-            id: shapeId,
-            x: shape.x + 20,
-            y: shape.y + 20,
-          }
-
-          const newLayer: Layer = {
-            ...layer,
-            id: shapeId,
-            name: `${layer.name} Copy`,
-            x: layer.x ? layer.x + 20 : undefined,
-            y: layer.y ? layer.y + 20 : undefined,
-          }
-
-          setShapes([...shapes, newShape])
-          setLayers([...layers, newLayer])
-          setSelectedLayerId(shapeId)
-          setSelectedId(shapeId)
-          setSaveStatus("unsaved")
-        }
-      }
-
-      // Delete: Delete or Backspace
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
-        e.preventDefault()
-        handleShapeDelete(selectedId)
-      }
-
-      // Select All: Cmd/Ctrl + A
-      if (cmdOrCtrl && e.key === 'a') {
-        e.preventDefault()
-        // Select the first shape if any exist
-        if (shapes.length > 0) {
-          setSelectedId(shapes[0].id)
-          setSelectedLayerId(shapes[0].id)
-        }
+        handleSave()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [shapes, layers, selectedId, clipboard]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [handleSave])
 
-  // Auto-save effect: saves 3 seconds after last change
-  useEffect(() => {
-    // Only auto-save when there are unsaved changes
-    if (saveStatus === "unsaved") {
-      // Clear any existing timer
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current)
-      }
-
-      // Set a new timer for 3 seconds
-      autoSaveTimerRef.current = setTimeout(() => {
-        handleSave()
-      }, 3000)
-    }
-
-    // Cleanup timer on unmount or when dependencies change
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current)
-      }
-    }
-  }, [shapes, layers, saveStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (isLoadingProject) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-background">
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span>Loading project...</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background relative">
-      {/* Floating Global Tools Bar */}
-      <GlobalToolsBar
-        activeTool={activeTool}
-        onToolChange={handleToolChange}
-        projectName={projectName}
-        saveStatus={saveStatus}
-        onProjectNameChange={setProjectName}
-        onSave={handleSave}
-        zoom={zoom}
-        onZoomChange={setZoom}
-        collaborators={collaborators}
-        isLocked={isLocked}
-        onLockToggle={() => setIsLocked(!isLocked)}
-      />
+    <div className="h-screen w-screen flex flex-col bg-background">
+      <div className="h-16 border-b border-border-primary bg-card flex items-center px-4 gap-4 z-10">
+        <Button variant="outline" onClick={handleBack} className="flex items-center gap-2">
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </Button>
 
-      {/* Main Workspace */}
-      <div className="flex-1 flex overflow-y-auto pt-20 relative">
-        {/* Canvas (full width) */}
-        <CanvasWorkspace
-          shapes={shapes}
-          selectedId={selectedId}
-          selectedLayerIds={selectedLayerIds}
-          activeTool={activeTool}
-          onShapeSelect={(id) => {
-            setSelectedId(id)
-            setSelectedLayerId(id)
-            setSelectedLayerIds([]) // Clear multi-selection when clicking a shape on canvas
-          }}
-          onShapeDragEnd={handleShapeDragEnd}
-          onShapeUpdate={handleShapeUpdate}
-          onCanvasClick={handleCanvasClick}
-          zoom={zoom}
-          layers={layers}
-        />
+        <div className="flex-1" />
 
-        {/* Floating Left Panel - Layers & Assets */}
-        <div className="absolute left-0 top-24 bottom-4 pointer-events-none z-20">
-          <div className="pointer-events-auto">
-            <LeftPanel
-              layers={layers}
-              selectedLayerId={selectedLayerId}
-              selectedLayerIds={selectedLayerIds}
-              onLayerSelect={(id, event) => {
-                // Check for Ctrl/Cmd key for multi-selection
-                const isMultiSelect = event?.ctrlKey || event?.metaKey
+        <h1 className="text-xl font-bold">
+          {project?.name || 'New Overlay'}
+        </h1>
 
-                if (isMultiSelect) {
-                  // Toggle layer in multi-selection
-                  if (selectedLayerIds.includes(id)) {
-                    const newSelectedIds = selectedLayerIds.filter(lid => lid !== id)
-                    setSelectedLayerIds(newSelectedIds)
-                    // Update primary selection to last remaining item, or clear if none
-                    if (newSelectedIds.length > 0) {
-                      const lastId = newSelectedIds[newSelectedIds.length - 1]
-                      setSelectedLayerId(lastId)
-                      setSelectedId(lastId)
-                    } else {
-                      setSelectedLayerId(null)
-                      setSelectedId(null)
-                    }
-                  } else {
-                    // Add to multi-selection and set as primary selection
-                    setSelectedLayerIds([...selectedLayerIds, id])
-                    setSelectedLayerId(id)
-                    setSelectedId(id)
-                  }
-                } else {
-                  // Single selection - clear multi-select
-                  setSelectedLayerId(id)
-                  setSelectedId(id) // Sync canvas selection
-                  setSelectedLayerIds([]) // Clear multi-selection
-                }
-              }}
-              onLayerAdd={handleLayerAdd}
-              onLayerDelete={handleLayerDelete}
-              onLayerUpdate={handleLayerUpdate}
-              onContextMenuAction={handleLayerContextMenu}
-              assets={assets}
-              assetCategories={assetCategories}
-              onAssetSelect={handleAssetSelect}
-              onAssetCreate={handleAssetCreate}
-            />
+        <div className="flex-1" />
+
+        <div className="flex items-center gap-4">
+          {/* Last saved indicator */}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {isSaving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : lastSaved ? (
+              <>
+                <Check className="w-4 h-4 text-green-500" />
+                <span>Saved {getRelativeTime(lastSaved)}</span>
+              </>
+            ) : hasUnsavedChanges ? (
+              <span className="text-yellow-500">Unsaved changes</span>
+            ) : null}
           </div>
-        </div>
 
-        {/* Floating Right Panel - Properties */}
-        <div className="absolute right-0 top-24 bottom-4 pointer-events-none z-20">
-          <div className="pointer-events-auto">
-            <PropertiesPanel
-              activeTool={activeTool}
-              selectedShape={selectedShape}
-              selectedLayer={selectedLayer}
-              onShapeUpdate={handleShapeUpdate}
-              onLayerUpdate={handleLayerUpdate}
-              onShapeDelete={handleShapeDelete}
-              onExportClick={() => setIsExportModalOpen(true)}
-            />
+          <Button onClick={handleSave} disabled={isSaving} variant="outline" className="flex items-center gap-2">
+            {isSaving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Save Now
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                Save Now
+              </>
+            )}
+          </Button>
+
+          <div className="relative">
+            <Button variant="outline" onClick={() => setShowExportMenu(!showExportMenu)} className="flex items-center gap-2">
+              <Download className="w-4 h-4" />
+              Export
+              <ChevronDown className="w-3 h-3" />
+            </Button>
+
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-900 rounded-lg shadow-lg border py-2 z-50">
+                <button onClick={() => handleExport('png')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
+                  Export as PNG
+                </button>
+                <button onClick={() => handleExport('svg')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
+                  Export as SVG
+                </button>
+                <button onClick={() => handleExport('pdf')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
+                  Export as PDF
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Export Modal - Rendered at page level for proper centering */}
-      <ExportModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        onExport={handleExport}
-      />
+      <div className="flex-1">
+        <PolotnoEditor
+          onStoreReady={handleStoreReady}
+          initialData={project?.project_data}
+        />
+      </div>
     </div>
+  )
+}
+
+export default function OverlayBuilderPage() {
+  return (
+    <Suspense fallback={
+      <div className="h-screen w-screen flex items-center justify-center bg-background">
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span>Loading...</span>
+        </div>
+      </div>
+    }>
+      <OverlayBuilderContent />
+    </Suspense>
   )
 }

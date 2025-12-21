@@ -32,7 +32,7 @@ export function useAutoSave({
   const updateProject = useUpdateProject()
   const createVersion = useCreateProjectVersion()
   const saveCountRef = useRef(0)
-  const timerRef = useRef<NodeJS.Timeout>()
+  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const lastSavedDataRef = useRef<string>('')
 
   useEffect(() => {

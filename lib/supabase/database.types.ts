@@ -29,6 +29,9 @@ export interface Database {
           username: string | null
           full_name: string | null
           avatar_url: string | null
+          bio: string | null
+          twitch_username: string | null
+          youtube_username: string | null
           tier: 'FREE' | 'PRO'
           created_at: string
           updated_at: string
@@ -39,6 +42,9 @@ export interface Database {
           username?: string | null
           full_name?: string | null
           avatar_url?: string | null
+          bio?: string | null
+          twitch_username?: string | null
+          youtube_username?: string | null
           tier?: 'FREE' | 'PRO'
           created_at?: string
           updated_at?: string
@@ -49,6 +55,9 @@ export interface Database {
           username?: string | null
           full_name?: string | null
           avatar_url?: string | null
+          bio?: string | null
+          twitch_username?: string | null
+          youtube_username?: string | null
           tier?: 'FREE' | 'PRO'
           created_at?: string
           updated_at?: string

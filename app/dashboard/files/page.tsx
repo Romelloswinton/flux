@@ -6,12 +6,16 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { useDropzone } from 'react-dropzone'
 import { useAssets, useAssetCategories, useCreateAsset, useDeleteAsset } from '@/lib/hooks/useAssets'
 import { uploadAssetMedia } from '@/lib/api/storage'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Upload, File, Image, Video, FileText, Trash2, Download, Search, Grid3x3, List, Folder, Plus } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
+import { Upload, File, Image, Video, FileText, Trash2, Download, Search, Grid3x3, List, Folder, Plus, CloudUpload } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 type TabType = 'media' | 'assets'
@@ -73,9 +77,8 @@ export default function FilesPage() {
     }
   }
 
-  // Handle file upload
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
+  // Handle file upload (for both drag-drop and click)
+  const handleFileUpload = async (files: File[]) => {
     if (!files || files.length === 0) return
 
     setUploading(true)
@@ -83,12 +86,12 @@ export default function FilesPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      for (const file of Array.from(files)) {
-        const fileName = `${user.id}/${Date.now()}-${file.name}`
+      for (const file of files) {
+        const fileName = `${Date.now()}-${file.name}`
 
         const { error } = await supabase.storage
           .from('asset-media')
-          .upload(fileName, file)
+          .upload(`${user.id}/${fileName}`, file)
 
         if (error) throw error
       }
@@ -102,6 +105,20 @@ export default function FilesPage() {
       setUploading(false)
     }
   }
+
+  // Dropzone configuration
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    handleFileUpload(acceptedFiles)
+  }, [])
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'],
+      'video/*': ['.mp4', '.mov', '.avi', '.webm']
+    },
+    disabled: uploading
+  })
 
   // Handle media file delete
   const handleDeleteMedia = async (fileName: string) => {
@@ -169,23 +186,12 @@ export default function FilesPage() {
           </div>
 
           {activeTab === 'media' && (
-            <div>
-              <input
-                type="file"
-                id="file-upload"
-                multiple
-                accept="image/*,video/*"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-              <label htmlFor="file-upload">
-                <Button disabled={uploading} className="cursor-pointer" asChild>
-                  <span>
-                    <Upload className="w-4 h-4 mr-2" />
-                    {uploading ? 'Uploading...' : 'Upload Files'}
-                  </span>
-                </Button>
-              </label>
+            <div {...getRootProps()}>
+              <input {...getInputProps()} />
+              <Button disabled={uploading} className="cursor-pointer">
+                <Upload className="w-4 h-4 mr-2" />
+                {uploading ? 'Uploading...' : 'Upload Files'}
+              </Button>
             </div>
           )}
         </div>
@@ -220,28 +226,29 @@ export default function FilesPage() {
         <div className="flex items-center gap-4 mb-6">
           {/* Search */}
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-secondary" />
-            <input
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-secondary pointer-events-none" />
+            <Input
               type="text"
               placeholder={activeTab === 'media' ? 'Search files...' : 'Search assets...'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-transparent"
+              className="pl-10"
             />
           </div>
 
           {/* Category filter (for assets only) */}
           {activeTab === 'assets' && (
-            <select
-              value={selectedCategory || ''}
-              onChange={(e) => setSelectedCategory(e.target.value || undefined)}
-              className="px-4 py-2 border border-border rounded-md bg-background"
-            >
-              <option value="">All Categories</option>
-              {categories?.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
+            <Select value={selectedCategory || 'all'} onValueChange={(value) => setSelectedCategory(value === 'all' ? undefined : value)}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories?.map(cat => (
+                  <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
 
           {/* View Toggle */}
@@ -260,6 +267,30 @@ export default function FilesPage() {
             </button>
           </div>
         </div>
+
+        {/* Drag & Drop Zone */}
+        {activeTab === 'media' && (
+          <div
+            {...getRootProps()}
+            className={`mb-6 border-2 border-dashed rounded-lg p-12 text-center transition-colors cursor-pointer ${
+              isDragActive
+                ? 'border-primary bg-primary/5'
+                : 'border-border hover:border-primary/50 hover:bg-muted/50'
+            } ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <input {...getInputProps()} />
+            <CloudUpload className={`w-16 h-16 mx-auto mb-4 ${isDragActive ? 'text-primary' : 'text-text-secondary'}`} />
+            <h3 className="text-lg font-semibold mb-2">
+              {isDragActive ? 'Drop files here' : 'Drag & drop files here'}
+            </h3>
+            <p className="text-sm text-text-secondary mb-4">
+              or click to browse from your computer
+            </p>
+            <p className="text-xs text-text-secondary">
+              Supports: Images (PNG, JPG, GIF, SVG) and Videos (MP4, MOV, WebM)
+            </p>
+          </div>
+        )}
 
         {/* Content */}
         {activeTab === 'media' ? (
@@ -322,18 +353,8 @@ export default function FilesPage() {
               <Upload className="w-16 h-16 text-text-secondary mx-auto mb-4" />
               <h3 className="text-xl font-semibold mb-2">No files yet</h3>
               <p className="text-text-secondary mb-6">
-                {searchQuery ? `No files match "${searchQuery}"` : 'Upload images and videos to get started'}
+                {searchQuery ? `No files match "${searchQuery}"` : 'Drag & drop files above or click to upload'}
               </p>
-              {!searchQuery && (
-                <label htmlFor="file-upload">
-                  <Button disabled={uploading} asChild>
-                    <span className="cursor-pointer">
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload Your First File
-                    </span>
-                  </Button>
-                </label>
-              )}
             </div>
           )
         ) : (

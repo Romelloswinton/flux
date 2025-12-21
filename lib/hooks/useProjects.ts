@@ -52,7 +52,7 @@ export function useProject(id: string | undefined) {
       if (error) throw error
 
       // Update last_opened_at
-      await supabase
+      await (supabase as any)
         .from('projects')
         .update({ last_opened_at: new Date().toISOString() })
         .eq('id', id)
@@ -94,7 +94,7 @@ export function useCreateProject() {
       }
       console.log('📝 Inserting data:', insertData)
 
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('projects')
         .insert(insertData)
         .select()
@@ -129,7 +129,7 @@ export function useUpdateProject() {
 
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: ProjectUpdate }) => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('projects')
         .update(updates)
         .eq('id', id)
@@ -167,20 +167,23 @@ export function useDuplicateProject() {
         .single()
 
       if (fetchError) throw fetchError
+      if (!original) throw new Error('Project not found')
+
+      const originalProject = original as Project
 
       // Create a duplicate
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('projects')
         .insert({
           owner_id: user.id,
-          name: `${original.name} (Copy)`,
-          description: original.description,
-          canvas_width: original.canvas_width,
-          canvas_height: original.canvas_height,
-          canvas_background_color: original.canvas_background_color,
-          project_data: original.project_data,
-          category: original.category,
-          tags: original.tags,
+          name: `${originalProject.name} (Copy)`,
+          description: originalProject.description,
+          canvas_width: originalProject.canvas_width,
+          canvas_height: originalProject.canvas_height,
+          canvas_background_color: originalProject.canvas_background_color,
+          project_data: originalProject.project_data,
+          category: originalProject.category,
+          tags: originalProject.tags,
         })
         .select()
         .single()
@@ -204,7 +207,7 @@ export function useDeleteProject() {
   return useMutation({
     mutationFn: async (id: string) => {
       // Soft delete
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('projects')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', id)

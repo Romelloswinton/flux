@@ -87,7 +87,10 @@ export function DashboardHeader() {
                     New Project
                   </button>
                   <button
-                    onClick={() => setIsCreateOpen(false)}
+                    onClick={() => {
+                      setIsCreateOpen(false);
+                      router.push('/dashboard/overlay-builder');
+                    }}
                     className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors"
                   >
                     New Overlay

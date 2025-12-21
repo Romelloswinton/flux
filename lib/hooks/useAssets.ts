@@ -70,7 +70,7 @@ export function useCreateAsset() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('assets')
         .insert({
           ...asset,
@@ -97,7 +97,7 @@ export function useUpdateAsset() {
 
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: AssetUpdate }) => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('assets')
         .update(updates)
         .eq('id', id)
@@ -123,7 +123,7 @@ export function useDeleteAsset() {
   return useMutation({
     mutationFn: async (id: string) => {
       // Soft delete
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('assets')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', id)
@@ -150,7 +150,7 @@ export function useToggleFavorite() {
 
       if (isFavorite) {
         // Remove favorite
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from('user_favorites')
           .delete()
           .eq('user_id', user.id)
@@ -159,7 +159,7 @@ export function useToggleFavorite() {
         if (error) throw error
       } else {
         // Add favorite
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from('user_favorites')
           .insert({
             user_id: user.id,

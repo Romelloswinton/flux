@@ -46,7 +46,7 @@ export function useCreateProjectVersion() {
       // Get current user
       const { data: { user } } = await supabase.auth.getUser()
 
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('project_versions')
         .insert({
           ...version,
@@ -81,12 +81,15 @@ export function useRestoreVersion() {
         .single()
 
       if (versionError) throw versionError
+      if (!version) throw new Error('Version not found')
+
+      const projectVersion = version as ProjectVersion
 
       // Update the project with the version's data
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('projects')
         .update({
-          project_data: version.project_data,
+          project_data: projectVersion.project_data,
           updated_at: new Date().toISOString(),
         })
         .eq('id', projectId)

@@ -55,19 +55,22 @@ export default function ProjectsPage() {
   }
 
   const handleNewProject = async () => {
+    if (!user) return
+
     try {
       const newProject = await createProject.mutateAsync({
+        owner_id: user.id,
         name: 'Untitled Overlay',
         project_data: { shapes: [], layers: [] },
-      })
-      router.push(`/dashboard/overlay-builder/${newProject.id}`)
+      } as any)
+      router.push(`/dashboard/overlay-builder`)
     } catch (error) {
       console.error('Failed to create project:', error)
     }
   }
 
   const handleOpenProject = (projectId: string) => {
-    router.push(`/dashboard/overlay-builder/${projectId}`)
+    router.push(`/dashboard/overlay-builder?id=${projectId}`)
   }
 
   const handleDuplicate = async (projectId: string, e: React.MouseEvent) => {
