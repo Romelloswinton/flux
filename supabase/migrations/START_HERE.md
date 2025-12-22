@@ -6,8 +6,8 @@
 1. Go to: https://supabase.com/dashboard/project/syfvhhjqlwyrdshrtvzb/sql
 2. Click **"New Query"**
 
-### Step 2: Run the Combined Migration
-1. Open the file: `00_COMBINED_MIGRATION.sql`
+### Step 2: Run the Complete Migration
+1. Open the file: `00_COMPLETE_MIGRATION.sql`
 2. **Copy ALL the contents** (Ctrl+A, Ctrl+C)
 3. **Paste into the SQL Editor** (Ctrl+V)
 4. Click **"Run"** button (or press Ctrl+Enter)
@@ -82,12 +82,10 @@ If the verification shows storage buckets failed:
 
 | File | Purpose | When to Use |
 |------|---------|-------------|
-| `00_COMBINED_MIGRATION.sql` | **RUN THIS FIRST** | Main migration - creates everything |
+| `00_COMPLETE_MIGRATION.sql` | **RUN THIS FIRST** | Complete migration - creates everything |
 | `VERIFY_MIGRATION.sql` | **RUN THIS SECOND** | Checks if migration succeeded |
-| `01_create_tables.sql` | Individual migration | If combined fails |
-| `02_create_functions_triggers.sql` | Individual migration | If combined fails |
-| `03_enable_rls.sql` | Individual migration | If combined fails |
-| `04_create_storage_buckets.sql` | Individual migration | If combined fails |
+| `FIX_RLS_RECURSION.sql` | Fix RLS issues | Only if you encounter RLS errors |
+| `CREATE_YOUR_PROFILE.sql` | Create specific profile | Only if profile creation fails |
 | `TROUBLESHOOTING.md` | **READ IF ERRORS** | Fixes for common issues |
 | `START_HERE.md` | You are here! | Step-by-step guide |
 | `README.md` | Detailed instructions | Reference guide |
@@ -179,7 +177,7 @@ A: Check `TROUBLESHOOTING.md` for specific fixes.
 
 Before you start coding, verify:
 
-- [ ] Ran `00_COMBINED_MIGRATION.sql` successfully
+- [ ] Ran `00_COMPLETE_MIGRATION.sql` successfully
 - [ ] Ran `VERIFY_MIGRATION.sql` - all ✅ checkmarks
 - [ ] Storage buckets exist (4 total)
 - [ ] Can sign up a test user
@@ -203,7 +201,7 @@ Before you start coding, verify:
 ## 🎉 Ready to Migrate?
 
 1. Open Supabase SQL Editor
-2. Run `00_COMBINED_MIGRATION.sql`
+2. Run `00_COMPLETE_MIGRATION.sql`
 3. Run `VERIFY_MIGRATION.sql`
 4. Create storage buckets (if needed)
 5. Start building! 🚀

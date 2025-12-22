@@ -1,19 +1,22 @@
 -- =============================================
--- Arc3D - COMBINED DATABASE MIGRATION
+-- Arc3D - COMPLETE DATABASE MIGRATION
 -- =============================================
+-- This file contains ALL database migrations in one place
+-- Run this ONCE in your Supabase SQL Editor
 --
--- This file combines all 4 migration files into one.
--- Run this ONCE in your Supabase SQL Editor.
---
--- After running, verify using the verification queries at the bottom.
+-- After running, verify using VERIFY_MIGRATION.sql
 -- =============================================
 
 -- =============================================
--- PART 1: CREATE TABLES
+-- EXTENSIONS
 -- =============================================
 
--- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- =============================================
+-- PART 1: CREATE ALL TABLES
+-- =============================================
 
 -- 1. PROFILES TABLE (extends auth.users)
 CREATE TABLE IF NOT EXISTS profiles (
@@ -22,12 +25,16 @@ CREATE TABLE IF NOT EXISTS profiles (
   username TEXT UNIQUE,
   full_name TEXT,
   avatar_url TEXT,
+  bio TEXT,
   tier TEXT NOT NULL DEFAULT 'FREE' CHECK (tier IN ('FREE', 'PRO')),
+  twitch_username TEXT,
+  youtube_username TEXT,
+  follower_count INTEGER NOT NULL DEFAULT 0,
+  following_count INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Indexes for profiles
 CREATE INDEX IF NOT EXISTS idx_profiles_tier ON profiles(tier);
 CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email);
 
@@ -58,10 +65,9 @@ CREATE TABLE IF NOT EXISTS projects (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_opened_at TIMESTAMPTZ,
-  deleted_at TIMESTAMPTZ -- Soft delete
+  deleted_at TIMESTAMPTZ
 );
 
--- Indexes for projects
 CREATE INDEX IF NOT EXISTS idx_projects_owner_id ON projects(owner_id);
 CREATE INDEX IF NOT EXISTS idx_projects_deleted_at ON projects(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_projects_is_public ON projects(is_public);
@@ -81,7 +87,6 @@ CREATE TABLE IF NOT EXISTS project_versions (
   UNIQUE(project_id, version_number)
 );
 
--- Indexes for project_versions
 CREATE INDEX IF NOT EXISTS idx_project_versions_project_id ON project_versions(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_versions_created_at ON project_versions(created_at DESC);
 
@@ -97,7 +102,6 @@ CREATE TABLE IF NOT EXISTS asset_categories (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Indexes for asset_categories
 CREATE INDEX IF NOT EXISTS idx_asset_categories_is_system ON asset_categories(is_system);
 CREATE INDEX IF NOT EXISTS idx_asset_categories_owner_id ON asset_categories(owner_id);
 
@@ -132,7 +136,6 @@ CREATE TABLE IF NOT EXISTS assets (
   deleted_at TIMESTAMPTZ
 );
 
--- Indexes for assets
 CREATE INDEX IF NOT EXISTS idx_assets_owner_id ON assets(owner_id);
 CREATE INDEX IF NOT EXISTS idx_assets_category_id ON assets(category_id);
 CREATE INDEX IF NOT EXISTS idx_assets_is_public ON assets(is_public);
@@ -148,7 +151,6 @@ CREATE TABLE IF NOT EXISTS user_favorites (
   PRIMARY KEY (user_id, asset_id)
 );
 
--- Indexes for user_favorites
 CREATE INDEX IF NOT EXISTS idx_user_favorites_user_id ON user_favorites(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_favorites_asset_id ON user_favorites(asset_id);
 
@@ -164,7 +166,6 @@ CREATE TABLE IF NOT EXISTS project_collaborators (
   PRIMARY KEY (project_id, user_id)
 );
 
--- Indexes for project_collaborators
 CREATE INDEX IF NOT EXISTS idx_project_collaborators_user_id ON project_collaborators(user_id);
 
 -- 8. PROJECT_ACTIVITY TABLE
@@ -177,10 +178,206 @@ CREATE TABLE IF NOT EXISTS project_activity (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Indexes for project_activity
 CREATE INDEX IF NOT EXISTS idx_project_activity_project_id ON project_activity(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_activity_user_id ON project_activity(user_id);
 CREATE INDEX IF NOT EXISTS idx_project_activity_created_at ON project_activity(created_at DESC);
+
+-- 9. 3D MODELS TABLE
+CREATE TABLE IF NOT EXISTS models_3d (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+
+  -- File storage
+  model_url TEXT NOT NULL,
+  thumbnail_url TEXT,
+  file_size_kb INTEGER,
+
+  -- Model metadata
+  format VARCHAR(10) DEFAULT 'glb',
+  poly_count INTEGER,
+  has_textures BOOLEAN DEFAULT false,
+  has_animations BOOLEAN DEFAULT false,
+  bounding_box JSONB,
+
+  -- AI generation data
+  generation_method VARCHAR(50),
+  generation_prompt TEXT,
+  source_image_url TEXT,
+
+  -- Categorization
+  category VARCHAR(50),
+  tags TEXT[],
+  is_public BOOLEAN DEFAULT false,
+
+  -- Usage tracking
+  download_count INTEGER DEFAULT 0,
+
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  deleted_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_models_3d_owner_id ON models_3d(owner_id);
+CREATE INDEX IF NOT EXISTS idx_models_3d_created_at ON models_3d(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_models_3d_category ON models_3d(category);
+CREATE INDEX IF NOT EXISTS idx_models_3d_is_public ON models_3d(is_public);
+
+-- 10. AI GENERATION JOBS TABLE
+CREATE TABLE IF NOT EXISTS ai_generation_jobs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+
+  -- Job details
+  job_type VARCHAR(50) NOT NULL DEFAULT 'text-to-3d',
+  status VARCHAR(50) DEFAULT 'pending',
+
+  -- Input parameters
+  prompt TEXT,
+  image_url TEXT,
+  options JSONB,
+
+  -- External API tracking
+  external_job_id VARCHAR(255),
+  external_status VARCHAR(50),
+
+  -- Output
+  result_url TEXT,
+  thumbnail_url TEXT,
+  error_message TEXT,
+
+  -- Billing
+  cost_usd DECIMAL(10, 4),
+  credits_used INTEGER,
+
+  -- Performance
+  processing_time_seconds INTEGER,
+
+  created_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_jobs_owner_id ON ai_generation_jobs(owner_id);
+CREATE INDEX IF NOT EXISTS idx_ai_jobs_status ON ai_generation_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_ai_jobs_created_at ON ai_generation_jobs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_jobs_external_job_id ON ai_generation_jobs(external_job_id);
+
+-- 11. USER FOLLOWS TABLE
+CREATE TABLE IF NOT EXISTS user_follows (
+  follower_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  following_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  PRIMARY KEY (follower_id, following_id),
+  CHECK (follower_id != following_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_follows_follower ON user_follows(follower_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_follows_following ON user_follows(following_id, created_at DESC);
+
+-- 12. COMMENTS TABLE
+CREATE TABLE IF NOT EXISTS comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  author_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+
+  -- Polymorphic relationship
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('project', 'asset', 'model_3d')),
+  entity_id UUID NOT NULL,
+
+  -- Comment content
+  content TEXT NOT NULL CHECK (length(content) > 0 AND length(content) <= 2000),
+
+  -- Reply threading
+  parent_comment_id UUID REFERENCES comments(id) ON DELETE CASCADE,
+
+  -- Engagement
+  like_count INTEGER NOT NULL DEFAULT 0,
+  reply_count INTEGER NOT NULL DEFAULT 0,
+
+  -- Moderation
+  is_edited BOOLEAN NOT NULL DEFAULT FALSE,
+  is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id, created_at DESC) WHERE is_deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_comments_author ON comments(author_id, created_at DESC) WHERE is_deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_comment_id) WHERE parent_comment_id IS NOT NULL;
+
+-- 13. LIKES TABLE
+CREATE TABLE IF NOT EXISTS likes (
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+
+  -- Polymorphic relationship
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('project', 'asset', 'model_3d', 'comment')),
+  entity_id UUID NOT NULL,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  PRIMARY KEY (user_id, entity_type, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_likes_entity ON likes(entity_type, entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_likes_user ON likes(user_id, created_at DESC);
+
+-- 14. NOTIFICATIONS TABLE
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+
+  -- Notification type
+  type TEXT NOT NULL CHECK (type IN (
+    'follow',
+    'like',
+    'comment',
+    'reply',
+    'collaboration_invite',
+    'collaboration_accepted',
+    'project_shared',
+    'asset_downloaded'
+  )),
+
+  -- Related entities
+  actor_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  entity_type TEXT,
+  entity_id UUID,
+
+  -- Notification content
+  title TEXT NOT NULL,
+  message TEXT,
+  action_url TEXT,
+
+  -- Status
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(recipient_id, is_read) WHERE is_read = FALSE;
+
+-- 15. TRENDING CONTENT TABLE
+CREATE TABLE IF NOT EXISTS trending_content (
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('project', 'asset', 'model_3d')),
+  entity_id UUID NOT NULL,
+  score DECIMAL NOT NULL DEFAULT 0,
+  view_count INTEGER NOT NULL DEFAULT 0,
+  like_count INTEGER NOT NULL DEFAULT 0,
+  download_count INTEGER NOT NULL DEFAULT 0,
+  comment_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  PRIMARY KEY (entity_type, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trending_score ON trending_content(score DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trending_type ON trending_content(entity_type, score DESC);
 
 -- =============================================
 -- PART 2: CREATE FUNCTIONS & TRIGGERS
@@ -224,6 +421,89 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Function: Update 3D models timestamp
+CREATE OR REPLACE FUNCTION update_models_3d_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function: Update AI jobs timestamp
+CREATE OR REPLACE FUNCTION update_ai_jobs_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function: Update comment reply count
+CREATE OR REPLACE FUNCTION update_comment_reply_count()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' AND NEW.parent_comment_id IS NOT NULL THEN
+    UPDATE comments
+    SET reply_count = reply_count + 1
+    WHERE id = NEW.parent_comment_id;
+  ELSIF TG_OP = 'DELETE' AND OLD.parent_comment_id IS NOT NULL THEN
+    UPDATE comments
+    SET reply_count = GREATEST(0, reply_count - 1)
+    WHERE id = OLD.parent_comment_id;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function: Update follower/following counts
+CREATE OR REPLACE FUNCTION update_follow_counts()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE profiles SET following_count = following_count + 1 WHERE id = NEW.follower_id;
+    UPDATE profiles SET follower_count = follower_count + 1 WHERE id = NEW.following_id;
+  ELSIF TG_OP = 'DELETE' THEN
+    UPDATE profiles SET following_count = GREATEST(0, following_count - 1) WHERE id = OLD.follower_id;
+    UPDATE profiles SET follower_count = GREATEST(0, follower_count - 1) WHERE id = OLD.following_id;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function: Update like counts
+CREATE OR REPLACE FUNCTION update_like_counts()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.entity_type = 'comment' THEN
+      UPDATE comments SET like_count = like_count + 1 WHERE id = NEW.entity_id;
+    ELSIF NEW.entity_type = 'asset' THEN
+      UPDATE assets SET favorite_count = favorite_count + 1 WHERE id = NEW.entity_id;
+    END IF;
+  ELSIF TG_OP = 'DELETE' THEN
+    IF OLD.entity_type = 'comment' THEN
+      UPDATE comments SET like_count = GREATEST(0, like_count - 1) WHERE id = OLD.entity_id;
+    ELSIF OLD.entity_type = 'asset' THEN
+      UPDATE assets SET favorite_count = GREATEST(0, favorite_count - 1) WHERE id = OLD.entity_id;
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function: Update comments updated_at and is_edited
+CREATE OR REPLACE FUNCTION update_comments_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  IF NEW.content != OLD.content THEN
+    NEW.is_edited = TRUE;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Triggers: Auto-update updated_at
 DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
 CREATE TRIGGER update_profiles_updated_at
@@ -243,6 +523,18 @@ CREATE TRIGGER update_assets_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS models_3d_updated_at ON models_3d;
+CREATE TRIGGER models_3d_updated_at
+  BEFORE UPDATE ON models_3d
+  FOR EACH ROW
+  EXECUTE FUNCTION update_models_3d_updated_at();
+
+DROP TRIGGER IF EXISTS ai_jobs_updated_at ON ai_generation_jobs;
+CREATE TRIGGER ai_jobs_updated_at
+  BEFORE UPDATE ON ai_generation_jobs
+  FOR EACH ROW
+  EXECUTE FUNCTION update_ai_jobs_updated_at();
+
 -- Trigger: Auto-set version number
 DROP TRIGGER IF EXISTS set_project_version_number ON project_versions;
 CREATE TRIGGER set_project_version_number
@@ -257,11 +549,38 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW
   EXECUTE FUNCTION handle_new_user();
 
+-- Trigger: Update comment reply count
+DROP TRIGGER IF EXISTS trigger_update_comment_reply_count ON comments;
+CREATE TRIGGER trigger_update_comment_reply_count
+  AFTER INSERT OR DELETE ON comments
+  FOR EACH ROW
+  EXECUTE FUNCTION update_comment_reply_count();
+
+-- Trigger: Update follow counts
+DROP TRIGGER IF EXISTS trigger_update_follow_counts ON user_follows;
+CREATE TRIGGER trigger_update_follow_counts
+  AFTER INSERT OR DELETE ON user_follows
+  FOR EACH ROW
+  EXECUTE FUNCTION update_follow_counts();
+
+-- Trigger: Update like counts
+DROP TRIGGER IF EXISTS trigger_update_like_counts ON likes;
+CREATE TRIGGER trigger_update_like_counts
+  AFTER INSERT OR DELETE ON likes
+  FOR EACH ROW
+  EXECUTE FUNCTION update_like_counts();
+
+-- Trigger: Update comments timestamp
+DROP TRIGGER IF EXISTS trigger_update_comments_timestamp ON comments;
+CREATE TRIGGER trigger_update_comments_timestamp
+  BEFORE UPDATE ON comments
+  FOR EACH ROW
+  EXECUTE FUNCTION update_comments_updated_at();
+
 -- =============================================
 -- PART 3: ENABLE ROW LEVEL SECURITY (RLS)
 -- =============================================
 
--- Enable RLS on all tables
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_versions ENABLE ROW LEVEL SECURITY;
@@ -270,11 +589,19 @@ ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_favorites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_collaborators ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_activity ENABLE ROW LEVEL SECURITY;
+ALTER TABLE models_3d ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_generation_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_follows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trending_content ENABLE ROW LEVEL SECURITY;
 
 -- =============================================
--- RLS POLICIES: PROFILES
+-- PART 4: RLS POLICIES
 -- =============================================
 
+-- PROFILES POLICIES
 DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
 CREATE POLICY "Users can view own profile"
   ON profiles FOR SELECT
@@ -285,20 +612,18 @@ CREATE POLICY "Users can update own profile"
   ON profiles FOR UPDATE
   USING (auth.uid() = id);
 
--- =============================================
--- RLS POLICIES: PROJECTS
--- =============================================
+DROP POLICY IF EXISTS "Profiles can be created" ON profiles;
+CREATE POLICY "Profiles can be created"
+  ON profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
 
+-- PROJECTS POLICIES
 DROP POLICY IF EXISTS "Users can view own projects" ON projects;
 CREATE POLICY "Users can view own projects"
   ON projects FOR SELECT
   USING (
     auth.uid() = owner_id
     OR is_public = TRUE
-    OR EXISTS (
-      SELECT 1 FROM project_collaborators
-      WHERE project_id = id AND user_id = auth.uid()
-    )
   );
 
 DROP POLICY IF EXISTS "Users can create projects" ON projects;
@@ -309,23 +634,14 @@ CREATE POLICY "Users can create projects"
 DROP POLICY IF EXISTS "Users can update own projects" ON projects;
 CREATE POLICY "Users can update own projects"
   ON projects FOR UPDATE
-  USING (
-    auth.uid() = owner_id
-    OR EXISTS (
-      SELECT 1 FROM project_collaborators
-      WHERE project_id = id AND user_id = auth.uid() AND role IN ('owner', 'editor')
-    )
-  );
+  USING (auth.uid() = owner_id);
 
 DROP POLICY IF EXISTS "Users can delete own projects" ON projects;
 CREATE POLICY "Users can delete own projects"
   ON projects FOR DELETE
   USING (auth.uid() = owner_id);
 
--- =============================================
--- RLS POLICIES: PROJECT_VERSIONS
--- =============================================
-
+-- PROJECT_VERSIONS POLICIES
 DROP POLICY IF EXISTS "Users can view project versions" ON project_versions;
 CREATE POLICY "Users can view project versions"
   ON project_versions FOR SELECT
@@ -333,14 +649,7 @@ CREATE POLICY "Users can view project versions"
     EXISTS (
       SELECT 1 FROM projects
       WHERE projects.id = project_id
-      AND (
-        projects.owner_id = auth.uid()
-        OR EXISTS (
-          SELECT 1 FROM project_collaborators
-          WHERE project_collaborators.project_id = projects.id
-          AND project_collaborators.user_id = auth.uid()
-        )
-      )
+      AND projects.owner_id = auth.uid()
     )
   );
 
@@ -351,22 +660,11 @@ CREATE POLICY "Users can create project versions"
     EXISTS (
       SELECT 1 FROM projects
       WHERE projects.id = project_id
-      AND (
-        projects.owner_id = auth.uid()
-        OR EXISTS (
-          SELECT 1 FROM project_collaborators
-          WHERE project_collaborators.project_id = projects.id
-          AND project_collaborators.user_id = auth.uid()
-          AND role IN ('owner', 'editor')
-        )
-      )
+      AND projects.owner_id = auth.uid()
     )
   );
 
--- =============================================
--- RLS POLICIES: ASSET_CATEGORIES
--- =============================================
-
+-- ASSET_CATEGORIES POLICIES
 DROP POLICY IF EXISTS "Anyone can view asset categories" ON asset_categories;
 CREATE POLICY "Anyone can view asset categories"
   ON asset_categories FOR SELECT
@@ -387,10 +685,7 @@ CREATE POLICY "Users can delete own categories"
   ON asset_categories FOR DELETE
   USING (auth.uid() = owner_id AND is_system = FALSE);
 
--- =============================================
--- RLS POLICIES: ASSETS
--- =============================================
-
+-- ASSETS POLICIES
 DROP POLICY IF EXISTS "Users can view public and own assets" ON assets;
 CREATE POLICY "Users can view public and own assets"
   ON assets FOR SELECT
@@ -414,10 +709,7 @@ CREATE POLICY "Users can delete own assets"
   ON assets FOR DELETE
   USING (auth.uid() = owner_id);
 
--- =============================================
--- RLS POLICIES: USER_FAVORITES
--- =============================================
-
+-- USER_FAVORITES POLICIES
 DROP POLICY IF EXISTS "Users can view own favorites" ON user_favorites;
 CREATE POLICY "Users can view own favorites"
   ON user_favorites FOR SELECT
@@ -433,10 +725,7 @@ CREATE POLICY "Users can remove favorites"
   ON user_favorites FOR DELETE
   USING (auth.uid() = user_id);
 
--- =============================================
--- RLS POLICIES: PROJECT_COLLABORATORS
--- =============================================
-
+-- PROJECT_COLLABORATORS POLICIES
 DROP POLICY IF EXISTS "Users can view project collaborators" ON project_collaborators;
 CREATE POLICY "Users can view project collaborators"
   ON project_collaborators FOR SELECT
@@ -468,10 +757,7 @@ CREATE POLICY "Project owners can remove collaborators"
     )
   );
 
--- =============================================
--- RLS POLICIES: PROJECT_ACTIVITY
--- =============================================
-
+-- PROJECT_ACTIVITY POLICIES
 DROP POLICY IF EXISTS "Users can view project activity" ON project_activity;
 CREATE POLICY "Users can view project activity"
   ON project_activity FOR SELECT
@@ -479,14 +765,7 @@ CREATE POLICY "Users can view project activity"
     EXISTS (
       SELECT 1 FROM projects
       WHERE projects.id = project_id
-      AND (
-        projects.owner_id = auth.uid()
-        OR EXISTS (
-          SELECT 1 FROM project_collaborators
-          WHERE project_collaborators.project_id = projects.id
-          AND project_collaborators.user_id = auth.uid()
-        )
-      )
+      AND projects.owner_id = auth.uid()
     )
   );
 
@@ -497,30 +776,149 @@ CREATE POLICY "Users can create activity logs"
     EXISTS (
       SELECT 1 FROM projects
       WHERE projects.id = project_id
-      AND (
-        projects.owner_id = auth.uid()
-        OR EXISTS (
-          SELECT 1 FROM project_collaborators
-          WHERE project_collaborators.project_id = projects.id
-          AND project_collaborators.user_id = auth.uid()
-        )
-      )
+      AND projects.owner_id = auth.uid()
     )
   );
 
--- =============================================
--- PART 4: CREATE STORAGE BUCKETS
--- =============================================
--- Note: Storage buckets may need to be created manually via the Supabase Dashboard
--- if the SQL commands fail. Go to Storage → New Bucket
+-- 3D MODELS POLICIES
+DROP POLICY IF EXISTS "Users can view their own 3D models" ON models_3d;
+CREATE POLICY "Users can view their own 3D models"
+  ON models_3d FOR SELECT
+  TO authenticated
+  USING (auth.uid() = owner_id);
 
--- Insert storage buckets (this might fail, see note above)
+DROP POLICY IF EXISTS "Anyone can view public 3D models" ON models_3d;
+CREATE POLICY "Anyone can view public 3D models"
+  ON models_3d FOR SELECT
+  TO public
+  USING (is_public = true);
+
+DROP POLICY IF EXISTS "Users can insert their own 3D models" ON models_3d;
+CREATE POLICY "Users can insert their own 3D models"
+  ON models_3d FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = owner_id);
+
+DROP POLICY IF EXISTS "Users can update their own 3D models" ON models_3d;
+CREATE POLICY "Users can update their own 3D models"
+  ON models_3d FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = owner_id);
+
+DROP POLICY IF EXISTS "Users can delete their own 3D models" ON models_3d;
+CREATE POLICY "Users can delete their own 3D models"
+  ON models_3d FOR DELETE
+  TO authenticated
+  USING (auth.uid() = owner_id);
+
+-- AI GENERATION JOBS POLICIES
+DROP POLICY IF EXISTS "Users can view their own AI jobs" ON ai_generation_jobs;
+CREATE POLICY "Users can view their own AI jobs"
+  ON ai_generation_jobs FOR SELECT
+  TO authenticated
+  USING (auth.uid() = owner_id);
+
+DROP POLICY IF EXISTS "Users can create AI jobs" ON ai_generation_jobs;
+CREATE POLICY "Users can create AI jobs"
+  ON ai_generation_jobs FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = owner_id);
+
+DROP POLICY IF EXISTS "Users can update their own AI jobs" ON ai_generation_jobs;
+CREATE POLICY "Users can update their own AI jobs"
+  ON ai_generation_jobs FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = owner_id);
+
+-- USER FOLLOWS POLICIES
+DROP POLICY IF EXISTS "Anyone can view follows" ON user_follows;
+CREATE POLICY "Anyone can view follows"
+  ON user_follows FOR SELECT
+  TO public
+  USING (true);
+
+DROP POLICY IF EXISTS "Users can manage their own follows" ON user_follows;
+CREATE POLICY "Users can manage their own follows"
+  ON user_follows FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = follower_id);
+
+DROP POLICY IF EXISTS "Users can unfollow" ON user_follows;
+CREATE POLICY "Users can unfollow"
+  ON user_follows FOR DELETE
+  TO authenticated
+  USING (auth.uid() = follower_id);
+
+-- COMMENTS POLICIES
+DROP POLICY IF EXISTS "Anyone can view non-deleted comments" ON comments;
+CREATE POLICY "Anyone can view non-deleted comments"
+  ON comments FOR SELECT
+  TO public
+  USING (is_deleted = FALSE);
+
+DROP POLICY IF EXISTS "Authenticated users can create comments" ON comments;
+CREATE POLICY "Authenticated users can create comments"
+  ON comments FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = author_id);
+
+DROP POLICY IF EXISTS "Authors can update their own comments" ON comments;
+CREATE POLICY "Authors can update their own comments"
+  ON comments FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = author_id);
+
+DROP POLICY IF EXISTS "Authors can delete their own comments" ON comments;
+CREATE POLICY "Authors can delete their own comments"
+  ON comments FOR DELETE
+  TO authenticated
+  USING (auth.uid() = author_id);
+
+-- LIKES POLICIES
+DROP POLICY IF EXISTS "Anyone can view likes" ON likes;
+CREATE POLICY "Anyone can view likes"
+  ON likes FOR SELECT
+  TO public
+  USING (true);
+
+DROP POLICY IF EXISTS "Users can manage their own likes" ON likes;
+CREATE POLICY "Users can manage their own likes"
+  ON likes FOR ALL
+  TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- NOTIFICATIONS POLICIES
+DROP POLICY IF EXISTS "Users can view their own notifications" ON notifications;
+CREATE POLICY "Users can view their own notifications"
+  ON notifications FOR SELECT
+  TO authenticated
+  USING (auth.uid() = recipient_id);
+
+DROP POLICY IF EXISTS "Users can update their own notifications" ON notifications;
+CREATE POLICY "Users can update their own notifications"
+  ON notifications FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = recipient_id);
+
+-- TRENDING CONTENT POLICIES
+DROP POLICY IF EXISTS "Anyone can view trending content" ON trending_content;
+CREATE POLICY "Anyone can view trending content"
+  ON trending_content FOR SELECT
+  TO public
+  USING (true);
+
+-- =============================================
+-- PART 5: STORAGE BUCKETS
+-- =============================================
+
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES
   ('project-thumbnails', 'project-thumbnails', TRUE, 5242880, ARRAY['image/png', 'image/jpeg', 'image/webp']::text[]),
   ('asset-media', 'asset-media', TRUE, 10485760, ARRAY['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml', 'video/mp4']::text[]),
   ('exports', 'exports', FALSE, 52428800, ARRAY['image/png', 'image/jpeg', 'image/svg+xml', 'application/zip']::text[]),
-  ('avatars', 'avatars', TRUE, 2097152, ARRAY['image/png', 'image/jpeg', 'image/webp']::text[])
+  ('avatars', 'avatars', TRUE, 2097152, ARRAY['image/png', 'image/jpeg', 'image/webp']::text[]),
+  ('models-3d', 'models-3d', TRUE, 104857600, ARRAY['model/gltf-binary', 'model/gltf+json', 'application/octet-stream']::text[])
 ON CONFLICT (id) DO NOTHING;
 
 -- Storage RLS Policies
@@ -579,7 +977,21 @@ CREATE POLICY "Anyone can view avatars"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'avatars');
 
+DROP POLICY IF EXISTS "Users can upload own 3D models" ON storage.objects;
+CREATE POLICY "Users can upload own 3D models"
+  ON storage.objects FOR INSERT
+  WITH CHECK (
+    bucket_id = 'models-3d'
+    AND (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+DROP POLICY IF EXISTS "Anyone can view 3D models" ON storage.objects;
+CREATE POLICY "Anyone can view 3D models"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'models-3d');
+
 -- =============================================
 -- MIGRATION COMPLETE!
 -- =============================================
--- Run the verification queries below to confirm everything worked.
+-- Run VERIFY_MIGRATION.sql to confirm everything worked
+-- =============================================

@@ -1,82 +1,73 @@
 # Database Migration Instructions
 
-Run these SQL files **in order** in your Supabase SQL Editor.
+Run the complete migration file in your Supabase SQL Editor.
 
-## How to Run Migrations
+## Quick Start
 
 1. Go to your Supabase project dashboard
 2. Click **SQL Editor** in the left sidebar
 3. Click **New Query**
-4. Copy and paste each file's contents in order
-5. Click **Run** (or press `Ctrl+Enter`)
-6. Verify success message before moving to next file
+4. Open `00_COMPLETE_MIGRATION.sql`
+5. Copy and paste the entire contents
+6. Click **Run** (or press `Ctrl+Enter`)
+7. Wait for completion (usually 30-60 seconds)
 
-## Migration Order
+## What This Migration Creates
 
-Run in this exact order:
+### ✅ All Tables (15 total)
+- **Core Tables:**
+  - `profiles` - User profiles with social features
+  - `projects` - Overlay designs
+  - `project_versions` - Version history
+  - `asset_categories` - Asset organization
+  - `assets` - Reusable components
+  - `user_favorites` - User's favorited assets
+  - `project_collaborators` - Sharing & collaboration
+  - `project_activity` - Audit log
 
-### ✅ Step 1: Create Tables
-**File:** `01_create_tables.sql`
+- **3D & AI Tables:**
+  - `models_3d` - 3D model storage
+  - `ai_generation_jobs` - AI generation tracking
 
-Creates all 8 database tables:
-- `profiles` - User profiles
-- `projects` - Overlay designs
-- `project_versions` - Version history
-- `asset_categories` - Asset organization
-- `assets` - Reusable components
-- `user_favorites` - User's favorited assets
-- `project_collaborators` - Sharing & collaboration
-- `project_activity` - Audit log
+- **Community Tables:**
+  - `user_follows` - User following system
+  - `comments` - Comments on projects/assets/models
+  - `likes` - Like system
+  - `notifications` - User notifications
+  - `trending_content` - Trending content tracking
 
-**Also includes:** Indexes, seed data for system categories
+### ✅ Functions & Triggers
+- Auto-update timestamps
+- Auto-increment version numbers
+- Auto-create profile on signup
+- Update follower/following counts
+- Update like counts
+- Update comment reply counts
 
----
-
-### ✅ Step 2: Create Functions & Triggers
-**File:** `02_create_functions_triggers.sql`
-
-Creates:
-- `update_updated_at_column()` - Auto-update timestamps
-- `set_version_number()` - Auto-increment version numbers
-- `handle_new_user()` - Auto-create profile on signup
-- All necessary triggers
-
----
-
-### ✅ Step 3: Enable Row Level Security
-**File:** `03_enable_rls.sql`
-
-Enables RLS on all tables and creates security policies:
+### ✅ Row Level Security
+- RLS enabled on all 15 tables
+- 40+ security policies
 - Users can only access their own data
-- Public projects/assets are accessible to all
-- Collaboration permissions enforced
-- Prevents unauthorized access
+- Public content accessible to all
 
----
-
-### ✅ Step 4: Create Storage Buckets
-**File:** `04_create_storage_buckets.sql`
-
-Creates 4 storage buckets with RLS policies:
+### ✅ Storage Buckets (5 total)
 - `project-thumbnails` (public, 5MB limit)
 - `asset-media` (public, 10MB limit)
 - `exports` (private, 50MB limit)
 - `avatars` (public, 2MB limit)
+- `models-3d` (public, 100MB limit)
 
 ---
 
 ## Verification
 
-After running all migrations, verify:
+After running the migration, verify using `VERIFY_MIGRATION.sql`:
 
 1. **Tables Created:**
    ```sql
-   SELECT table_name
-   FROM information_schema.tables
-   WHERE table_schema = 'public'
-   ORDER BY table_name;
+   SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';
    ```
-   Should show: `asset_categories`, `assets`, `profiles`, `project_activity`, `project_collaborators`, `project_versions`, `projects`, `user_favorites`
+   Should show: **15 tables**
 
 2. **System Categories Exist:**
    ```sql
@@ -85,15 +76,16 @@ After running all migrations, verify:
    Should show: Overlays, Badges, Widgets, Templates, Components, Presets
 
 3. **Storage Buckets Created:**
-   Go to **Storage** in Supabase dashboard, should see 4 buckets
+   Go to **Storage** in Supabase dashboard, should see 5 buckets
 
 4. **RLS Enabled:**
    ```sql
-   SELECT tablename, rowsecurity
-   FROM pg_tables
-   WHERE schemaname = 'public';
+   SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true;
    ```
-   All tables should have `rowsecurity = true`
+   Should show: **15** (all tables have RLS enabled)
+
+5. **Run Full Verification:**
+   Copy and paste the contents of `VERIFY_MIGRATION.sql` to get a complete report
 
 ---
 
@@ -117,8 +109,16 @@ After running all migrations, verify:
 ## Next Steps
 
 After successful migration:
-1. ✅ Generate TypeScript types
-2. ✅ Create Supabase client wrappers
-3. ✅ Set up authentication
+1. ✅ Test user signup (profile should auto-create)
+2. ✅ Test project creation
+3. ✅ Test template usage
+4. ✅ Verify storage bucket access
+5. ✅ Generate TypeScript types (if needed)
 
-See main implementation plan for details.
+## Additional Files
+
+- **`FIX_RLS_RECURSION.sql`** - Only needed if you encounter RLS recursion errors
+- **`CREATE_YOUR_PROFILE.sql`** - Manual profile creation (only if auto-creation fails)
+- **`VERIFY_MIGRATION.sql`** - Complete verification script
+- **`TROUBLESHOOTING.md`** - Detailed troubleshooting guide
+- **`START_HERE.md`** - Quick start guide

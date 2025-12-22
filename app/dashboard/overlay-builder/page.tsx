@@ -3,9 +3,10 @@
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, Save, Loader2, Download, ChevronDown, Check } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Download, ChevronDown, Check, History, X } from 'lucide-react'
 import { useProject, useCreateProject, useUpdateProject } from '@/lib/hooks/useProjects'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { useProjectVersions, useCreateProjectVersion, useRestoreVersion } from '@/lib/hooks/useProjectVersions'
 import { useEffect, useRef, useState, Suspense, useCallback } from 'react'
 import type { StoreType } from 'polotno/model/store'
 
@@ -20,17 +21,23 @@ function OverlayBuilderContent() {
   const projectId = searchParams.get('id')
 
   const storeRef = useRef<StoreType | null>(null)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showVersionHistory, setShowVersionHistory] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const lastSavedDataRef = useRef<string>('')
+  const saveCountRef = useRef(0)
 
   const { user } = useAuth()
   const { data: project, isLoading: isLoadingProject } = useProject(projectId || undefined)
+  const { data: versions, isLoading: isLoadingVersions } = useProjectVersions(projectId || undefined)
   const createProject = useCreateProject()
   const updateProject = useUpdateProject()
+  const createVersion = useCreateProjectVersion()
+  const restoreVersion = useRestoreVersion()
 
   // Auto-save logic with debouncing
   const performSave = useCallback(async (isManualSave = false) => {
@@ -79,6 +86,24 @@ function OverlayBuilderContent() {
       lastSavedDataRef.current = currentData
       setHasUnsavedChanges(false)
       setLastSaved(new Date())
+
+      // Create version snapshot every 10 saves
+      if (projectId) {
+        saveCountRef.current += 1
+        if (saveCountRef.current % 10 === 0) {
+          try {
+            await createVersion.mutateAsync({
+              project_id: projectId,
+              project_data: snapshot as any,
+              change_description: `Auto-save checkpoint #${saveCountRef.current}`,
+            })
+            console.log('Version snapshot created')
+          } catch (versionError) {
+            console.error('Failed to create version:', versionError)
+            // Don't fail the save if version creation fails
+          }
+        }
+      }
     } catch (error) {
       console.error('Save failed:', error)
       if (isManualSave) {
@@ -87,7 +112,7 @@ function OverlayBuilderContent() {
     } finally {
       setIsSaving(false)
     }
-  }, [projectId, project, user, updateProject, createProject, router])
+  }, [projectId, project, user, updateProject, createProject, createVersion, router])
 
   // Auto-save on store changes (debounced)
   useEffect(() => {
@@ -181,6 +206,26 @@ function OverlayBuilderContent() {
     }
   }
 
+  const handleRestoreVersion = async (versionId: string) => {
+    if (!projectId) return
+
+    const confirmRestore = window.confirm(
+      'Are you sure you want to restore this version? Current unsaved changes will be lost.'
+    )
+
+    if (!confirmRestore) return
+
+    try {
+      await restoreVersion.mutateAsync({ projectId, versionId })
+
+      // Reload the page to refresh the editor with restored data
+      window.location.reload()
+    } catch (error) {
+      console.error('Failed to restore version:', error)
+      alert('Failed to restore version')
+    }
+  }
+
   // Helper to format relative time
   const getRelativeTime = (date: Date | null) => {
     if (!date) return null
@@ -223,6 +268,26 @@ function OverlayBuilderContent() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleSave])
 
+  // Close export menu when clicking outside
+  useEffect(() => {
+    if (!showExportMenu) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false)
+      }
+    }
+
+    // Add small delay to prevent immediate closing
+    setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside)
+    }, 0)
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showExportMenu])
+
   if (isLoadingProject) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-background">
@@ -234,83 +299,216 @@ function OverlayBuilderContent() {
     )
   }
 
-  return (
-    <div className="h-screen w-screen flex flex-col bg-background">
-      <div className="h-16 border-b border-border-primary bg-card flex items-center px-4 gap-4 z-10">
-        <Button variant="outline" onClick={handleBack} className="flex items-center gap-2">
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Button>
+  // Custom toolbar components
+  const toolbarLeft = (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleBack}
+        className="flex items-center gap-2"
+        style={{
+          background: 'rgba(0, 0, 0, 0.05)',
+          borderRadius: '4px',
+          padding: '6px 12px',
+          fontSize: '14px'
+        }}
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back
+      </Button>
+      <div style={{
+        fontSize: '16px',
+        fontWeight: 600,
+        marginLeft: '12px'
+      }}>
+        {project?.name || 'New Overlay'}
+      </div>
+    </>
+  )
 
-        <div className="flex-1" />
-
-        <h1 className="text-xl font-bold">
-          {project?.name || 'New Overlay'}
-        </h1>
-
-        <div className="flex-1" />
-
-        <div className="flex items-center gap-4">
-          {/* Last saved indicator */}
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {isSaving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Saving...</span>
-              </>
-            ) : lastSaved ? (
-              <>
-                <Check className="w-4 h-4 text-green-500" />
-                <span>Saved {getRelativeTime(lastSaved)}</span>
-              </>
-            ) : hasUnsavedChanges ? (
-              <span className="text-yellow-500">Unsaved changes</span>
-            ) : null}
-          </div>
-
-          <Button onClick={handleSave} disabled={isSaving} variant="outline" className="flex items-center gap-2">
-            {isSaving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Save Now
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                Save Now
-              </>
-            )}
-          </Button>
-
-          <div className="relative">
-            <Button variant="outline" onClick={() => setShowExportMenu(!showExportMenu)} className="flex items-center gap-2">
-              <Download className="w-4 h-4" />
-              Export
-              <ChevronDown className="w-3 h-3" />
-            </Button>
-
-            {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-900 rounded-lg shadow-lg border py-2 z-50">
-                <button onClick={() => handleExport('png')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
-                  Export as PNG
-                </button>
-                <button onClick={() => handleExport('svg')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
-                  Export as SVG
-                </button>
-                <button onClick={() => handleExport('pdf')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
-                  Export as PDF
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+  const toolbarRight = (
+    <>
+      {/* Last saved indicator */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        fontSize: '13px',
+        color: '#666'
+      }}>
+        {isSaving ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Saving...</span>
+          </>
+        ) : lastSaved ? (
+          <>
+            <Check className="w-4 h-4" style={{ color: '#22c55e' }} />
+            <span>Saved {getRelativeTime(lastSaved)}</span>
+          </>
+        ) : hasUnsavedChanges ? (
+          <span style={{ color: '#eab308' }}>Unsaved changes</span>
+        ) : null}
       </div>
 
-      <div className="flex-1">
+      <Button
+        onClick={handleSave}
+        disabled={isSaving}
+        variant="ghost"
+        size="sm"
+        className="flex items-center gap-2"
+        style={{
+          background: 'rgba(0, 0, 0, 0.05)',
+          borderRadius: '4px',
+          padding: '6px 12px',
+          fontSize: '14px'
+        }}
+      >
+        {isSaving ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Save Now
+          </>
+        ) : (
+          <>
+            <Save className="w-4 h-4" />
+            Save Now
+          </>
+        )}
+      </Button>
+
+      <div style={{ position: 'relative' }} ref={exportMenuRef}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowExportMenu(!showExportMenu)}
+          className="flex items-center gap-2"
+          style={{
+            background: 'rgba(0, 0, 0, 0.05)',
+            borderRadius: '4px',
+            padding: '6px 12px',
+            fontSize: '14px'
+          }}
+        >
+          <Download className="w-4 h-4" />
+          Export
+          <ChevronDown className="w-3 h-3" />
+        </Button>
+
+        {showExportMenu && (
+          <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-900 rounded-lg shadow-lg border py-2 z-50">
+            <button onClick={() => handleExport('png')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
+              Export as PNG
+            </button>
+            <button onClick={() => handleExport('svg')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
+              Export as SVG
+            </button>
+            <button onClick={() => handleExport('pdf')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
+              Export as PDF
+            </button>
+          </div>
+        )}
+      </div>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setShowVersionHistory(!showVersionHistory)}
+        className="flex items-center gap-2"
+        disabled={!projectId}
+        style={{
+          background: 'rgba(0, 0, 0, 0.05)',
+          borderRadius: '4px',
+          padding: '6px 12px',
+          fontSize: '14px'
+        }}
+      >
+        <History className="w-4 h-4" />
+        History
+      </Button>
+    </>
+  )
+
+  return (
+    <div className="h-screen w-screen flex flex-col bg-background">
+      <div className="flex-1 relative">
         <PolotnoEditor
           onStoreReady={handleStoreReady}
           initialData={project?.project_data}
+          customToolbarLeft={toolbarLeft}
+          customToolbarRight={toolbarRight}
         />
+
+        {/* Version History Panel */}
+        {showVersionHistory && (
+          <div className="absolute top-0 right-0 h-full w-80 bg-white dark:bg-gray-900 border-l border-border-primary shadow-lg z-50 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border-primary">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <History className="w-5 h-5" />
+                Version History
+              </h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowVersionHistory(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            {/* Version List */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {isLoadingVersions ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                </div>
+              ) : !versions || versions.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <History className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No version history yet</p>
+                  <p className="text-xs mt-1">Versions are created every 10 saves</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {versions.map((version, index) => (
+                    <div
+                      key={version.id}
+                      className="p-3 rounded-lg border border-border-primary hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">
+                              v{version.version_number}
+                            </span>
+                            {index === 0 && (
+                              <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded">
+                                Latest
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm mt-1 text-muted-foreground truncate">
+                            {version.change_description || 'No description'}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {getRelativeTime(new Date(version.created_at))}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRestoreVersion(version.id)}
+                          disabled={restoreVersion.isPending}
+                          className="text-xs"
+                        >
+                          Restore
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

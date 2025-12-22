@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, FileText, LayoutTemplate, Sparkles, Users, FolderKanban, Plus, Crown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Home, FileText, LayoutTemplate, Sparkles, Users, FolderKanban, Plus, Crown, ChevronLeft, ChevronRight, Compass, Box, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -12,6 +12,11 @@ const mainNavItems = [
     title: 'Home',
     href: '/dashboard',
     icon: Home,
+  },
+  {
+    title: 'Discover',
+    href: '/dashboard/discover',
+    icon: Compass,
   },
   {
     title: 'My files',
@@ -24,14 +29,27 @@ const mainNavItems = [
     icon: LayoutTemplate,
   },
   {
-    title: 'Generate',
-    href: '/dashboard/generate',
-    icon: Sparkles,
-  },
-  {
     title: 'Community',
     href: '/dashboard/community',
     icon: Users,
+  },
+];
+
+const creativeNavItems = [
+  {
+    title: '3D Builder',
+    href: '/dashboard/3d-builder',
+    icon: Box,
+  },
+  {
+    title: 'AI Generator',
+    href: '/dashboard/ai-generator',
+    icon: Wand2,
+  },
+  {
+    title: 'Overlay Builder',
+    href: '/dashboard/overlay-builder',
+    icon: Sparkles,
   },
 ];
 
@@ -101,6 +119,38 @@ export function Sidebar() {
           })}
         </ul>
 
+        {/* Creative Tools Section */}
+        {!isCollapsed && (
+          <div className="mt-8">
+            <h3 className="px-3 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Creative Tools
+            </h3>
+            <ul className="space-y-1">
+              {creativeNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      )}
+                    >
+                      <Icon className="h-5 w-5" />
+                      {item.title}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         {/* Projects Section */}
         {!isCollapsed && (
           <div className="mt-8">
@@ -133,7 +183,30 @@ export function Sidebar() {
           </div>
         )}
         {isCollapsed && (
-          <div className="mt-8">
+          <div className="mt-8 space-y-6">
+            <ul className="space-y-1">
+              {creativeNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        'flex items-center justify-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      )}
+                      title={item.title}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
             <ul className="space-y-1">
               {projectNavItems.map((item) => {
                 const Icon = item.icon;

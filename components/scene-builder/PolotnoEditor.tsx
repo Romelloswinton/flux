@@ -13,9 +13,11 @@ import type { StoreType } from 'polotno/model/store'
 interface PolotnoEditorProps {
   onStoreReady?: (store: StoreType) => void
   initialData?: any
+  customToolbarLeft?: React.ReactNode
+  customToolbarRight?: React.ReactNode
 }
 
-export function PolotnoEditor({ onStoreReady, initialData }: PolotnoEditorProps) {
+export function PolotnoEditor({ onStoreReady, initialData, customToolbarLeft, customToolbarRight }: PolotnoEditorProps) {
   const storeRef = useRef<StoreType | null>(null)
 
   useEffect(() => {
@@ -76,7 +78,18 @@ export function PolotnoEditor({ onStoreReady, initialData }: PolotnoEditorProps)
         <SidePanel store={storeRef.current} />
       </SidePanelWrap>
       <WorkspaceWrap>
-        <Toolbar store={storeRef.current} downloadButtonEnabled />
+        <Toolbar store={storeRef.current} downloadButtonEnabled>
+          {customToolbarLeft && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: 'auto', paddingLeft: '8px' }}>
+              {customToolbarLeft}
+            </div>
+          )}
+          {customToolbarRight && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', paddingRight: '8px' }}>
+              {customToolbarRight}
+            </div>
+          )}
+        </Toolbar>
         <Workspace store={storeRef.current} />
         <ZoomButtons store={storeRef.current} />
         <PagesTimeline store={storeRef.current} />
