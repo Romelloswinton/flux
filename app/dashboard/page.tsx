@@ -2,16 +2,14 @@ import Link from 'next/link';
 import { Palette, Cpu, Award, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { DashboardHeader, Sidebar } from '@/components/navigation';
+import { DashboardHeader } from '@/components/navigation';
 
 export default function Dashboard() {
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <DashboardHeader />
-        <div className="p-8">
-      <div className="max-w-7xl mx-auto">
+    <div className="flex-1 overflow-auto">
+      <DashboardHeader />
+      <div className="p-8">
+        <div className="max-w-7xl mx-auto">
         {/* Quick Actions */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           <Link href="/dashboard/overlay-builder" className="group">
@@ -72,7 +70,6 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
-        </div>
       </div>
     </div>
   );

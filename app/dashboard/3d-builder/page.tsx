@@ -10,6 +10,7 @@ import {
   upload3DModelFile,
 } from "@/lib/hooks/use3DModels"
 import { useAuth } from "@/lib/hooks/useAuth"
+import { analyze3DModel } from "@/lib/utils/modelAnalysis"
 import { Upload, Save, ArrowLeft, Loader2, Box, Sparkles } from "lucide-react"
 import { useState, Suspense } from "react"
 import { useRouter } from "next/navigation"
@@ -62,6 +63,9 @@ function ThreeDBuilderContent() {
     setIsUploading(true)
 
     try {
+      // Analyze the model for textures and animations
+      const analysis = await analyze3DModel(modelFile)
+
       // Upload file to Supabase Storage
       const uploadedUrl = await upload3DModelFile(modelFile, user.id)
 
@@ -71,15 +75,15 @@ function ThreeDBuilderContent() {
       // Determine format
       const format = modelFile.name.endsWith(".gltf") ? "gltf" : "glb"
 
-      // Create database entry
+      // Create database entry with analysis results
       await createModel.mutateAsync({
         owner_id: user.id,
         name: modelName,
         model_url: uploadedUrl,
         file_size_kb: fileSizeKb,
         format,
-        has_textures: false, // TODO: Detect textures
-        has_animations: false, // TODO: Detect animations
+        has_textures: analysis.hasTextures,
+        has_animations: analysis.hasAnimations,
         generation_method: "upload",
       })
 

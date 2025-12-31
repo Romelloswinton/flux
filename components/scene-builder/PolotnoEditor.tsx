@@ -9,6 +9,8 @@ import { SidePanel } from 'polotno/side-panel'
 import { Workspace } from 'polotno/canvas/workspace'
 import { createStore } from 'polotno/model/store'
 import type { StoreType } from 'polotno/model/store'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { FeatureErrorFallback } from '@/components/ErrorFallback'
 
 interface PolotnoEditorProps {
   onStoreReady?: (store: StoreType) => void
@@ -73,27 +75,29 @@ export function PolotnoEditor({ onStoreReady, initialData, customToolbarLeft, cu
   }
 
   return (
-    <PolotnoContainer style={{ width: '100%', height: '100%' }}>
-      <SidePanelWrap>
-        <SidePanel store={storeRef.current} />
-      </SidePanelWrap>
-      <WorkspaceWrap>
-        <Toolbar store={storeRef.current} downloadButtonEnabled>
-          {customToolbarLeft && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: 'auto', paddingLeft: '8px' }}>
-              {customToolbarLeft}
-            </div>
-          )}
-          {customToolbarRight && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', paddingRight: '8px' }}>
-              {customToolbarRight}
-            </div>
-          )}
-        </Toolbar>
-        <Workspace store={storeRef.current} />
-        <ZoomButtons store={storeRef.current} />
-        <PagesTimeline store={storeRef.current} />
-      </WorkspaceWrap>
-    </PolotnoContainer>
+    <ErrorBoundary fallback={<FeatureErrorFallback title="Canvas Editor Error" />}>
+      <PolotnoContainer style={{ width: '100%', height: '100%' }}>
+        <SidePanelWrap>
+          <SidePanel store={storeRef.current} />
+        </SidePanelWrap>
+        <WorkspaceWrap>
+          <Toolbar store={storeRef.current} downloadButtonEnabled>
+            {customToolbarLeft && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: 'auto', paddingLeft: '8px' }}>
+                {customToolbarLeft}
+              </div>
+            )}
+            {customToolbarRight && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', paddingRight: '8px' }}>
+                {customToolbarRight}
+              </div>
+            )}
+          </Toolbar>
+          <Workspace store={storeRef.current} />
+          <ZoomButtons store={storeRef.current} />
+          <PagesTimeline store={storeRef.current} />
+        </WorkspaceWrap>
+      </PolotnoContainer>
+    </ErrorBoundary>
   )
 }

@@ -72,19 +72,14 @@ export function useCreateProject() {
 
   return useMutation({
     mutationFn: async (project: ProjectInsert) => {
-      console.log('🚀 Creating project with data:', project)
-
       // Get current user
       const { data: { user }, error: authError } = await supabase.auth.getUser()
-      console.log('👤 Current user:', user?.id, user?.email)
 
       if (authError) {
-        console.error('❌ Auth error:', authError)
         throw new Error(`Authentication error: ${authError.message}`)
       }
 
       if (!user) {
-        console.error('❌ No user found')
         throw new Error('Not authenticated')
       }
 
@@ -92,7 +87,6 @@ export function useCreateProject() {
         ...project,
         owner_id: user.id,
       }
-      console.log('📝 Inserting data:', insertData)
 
       const { data, error } = await (supabase as any)
         .from('projects')
@@ -101,17 +95,9 @@ export function useCreateProject() {
         .single()
 
       if (error) {
-        console.error('❌ Database error:', error)
-        console.error('Error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        })
         throw new Error(`Database error: ${error.message}${error.hint ? ` (${error.hint})` : ''}`)
       }
 
-      console.log('✅ Project created successfully:', data)
       return data as Project
     },
     onSuccess: () => {
